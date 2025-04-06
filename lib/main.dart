@@ -6,6 +6,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // .env 파일 경로
   await dotenv.load(fileName: '.env');
   
   await NaverMapSdk.instance.initialize(
