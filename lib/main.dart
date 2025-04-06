@@ -17,15 +17,6 @@ void main() async {
   );
   
   runApp(MyApp());
-
-  // 네이버 맵 초기화
-  /*await NaverMapSdk.instance.initialize(
-    clientId: 'nfrc2bhyq8',
-    onAuthFailed: (error) {
-      print('네이버 맵 인증 실패: $error');
-    },
-  );
-  runApp(const MyApp());*/
 }
 
 class MyApp extends StatelessWidget {
