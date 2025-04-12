@@ -9,7 +9,7 @@ void main() async {
 
   // .env 파일 경로
   await dotenv.load(fileName: '.env');
-
+  print('환경변수 확인: ${dotenv.env['API_BASE_URL']}');
   await NaverMapSdk.instance.initialize(
     clientId: dotenv.env['NAVER_API_KEY'] ?? '',
     onAuthFailed: (error) {
@@ -26,6 +26,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false, // 디버그 라벨 제거
       title: 'TOMAPTO',
       theme: ThemeData(
         primarySwatch: Colors.red, // 네비게이션바의 테마색상과 맞춤
