@@ -28,6 +28,11 @@
 	<true/>
 	<key>NMFClientId</key>
 	<string>$(NAVER_API_KEY)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+    <key>NSExceptionDomains</key>
+    	<dict/>
+	</dict>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>사용자의 현재 위치는 사용자 근처의 정보를 가져오는데 반드시 필요합니다!</string>
 	<key>NSLocationAlwaysUsageDescription</key>
@@ -53,9 +58,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
 </dict>
 </plist>

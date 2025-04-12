@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
-import '../../main.dart'; // AuthManager 클래스를 사용하기 위해 import
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:tomapto/controllers/login_controller.dart';
+import 'package:tomapto/widgets/bottom_nav_bar.dart';
+import 'package:tomapto/styles/app_styles.dart';
 
 class LoginPage extends StatefulWidget {
   final Function? onLoginSuccess;
@@ -12,114 +15,95 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final _formKey = GlobalKey<FormState>();
-  final TextEditingController _idController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  final FocusNode _idFocusNode = FocusNode();
-  final FocusNode _passwordFocusNode = FocusNode();
-  bool _rememberMe = false;
-  bool _obscureText = true;
-  bool _isLoading = false; // 로딩 상태 추적
+  // 컨트롤러 인스턴스 생성
+  final LoginController _controller = LoginController();
 
   @override
   void initState() {
     super.initState();
     // 포커스 노드에 리스너 추가
-    _idFocusNode.addListener(() {
+    _controller.idFocusNode.addListener(() {
       setState(() {});
     });
-    _passwordFocusNode.addListener(() {
+    _controller.passwordFocusNode.addListener(() {
       setState(() {});
     });
+
+    // 로그인 상태 확인 및 자동 로그인 처리
+    _checkLoginStatus();
+  }
+
+  // 로그인 상태 확인 메소드
+  Future<void> _checkLoginStatus() async {
+    final isLoggedIn = await _controller.checkLoginStatus();
+
+    if (isLoggedIn && mounted) {
+      // 여기서 홈 화면으로 이동 (실제 구현 필요)
+      // Navigator.of(context).pushReplacement(
+      //   MaterialPageRoute(builder: (context) => HomePage()),
+      // );
+    }
   }
 
   @override
   void dispose() {
-    // 컨트롤러와 포커스 노드 해제
-    _idController.dispose();
-    _passwordController.dispose();
-    _idFocusNode.dispose();
-    _passwordFocusNode.dispose();
+    // 컨트롤러 리소스 해제
+    _controller.dispose();
     super.dispose();
   }
 
-  Future<void> _login() async {
-    if (_formKey.currentState?.validate() ?? false) {
-      // 로딩 상태 시작
-      setState(() {
-        _isLoading = true;
-      });
-
-      try {
-        // 여기에 기존 백엔드 연결 코드를 사용합니다
-
-        // 로그인 성공 시 상태 업데이트
-        AuthManager.isLoggedIn = true;
-
-        // 로딩 상태 종료
-        setState(() {
-          _isLoading = false;
-        });
-
-        // 로그인 성공 스낵바
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('로그인 성공!')));
-
-        // 로그인 성공 콜백이 있으면 호출
-        if (widget.onLoginSuccess != null) {
-          widget.onLoginSuccess!();
-        }
-      } catch (e) {
-        setState(() {
-          _isLoading = false;
-        });
-        // 에러 처리
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('로그인 실패: $e')));
-      }
-    }
-  }
-
+  // 비밀번호 찾기 네비게이션
   void _navigateToPasswordReset() {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('비밀번호 찾기 페이지로 이동합니다')));
   }
 
+  // 회원가입 네비게이션
   void _navigateToSignUp() {
-    Navigator.pushNamed(context, '/signup');
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('회원가입 페이지로 이동합니다')));
+    // 실제 회원가입 페이지로 이동 (구현 필요)
+    // Navigator.of(context).push(
+    //   MaterialPageRoute(builder: (context) => SignUpPage()),
+    // );
+  }
+
+  // 로그인 처리
+  Future<void> _login() async {
+    final success = await _controller.login(context, setState);
+    if (success && mounted) {
+      // 홈 화면으로 이동 (실제 구현 필요)
+      // Navigator.of(context).pushReplacement(
+      //   MaterialPageRoute(builder: (context) => HomePage()),
+      // );
+    }
   }
 
   // 배경 영역을 터치했을 때 포커스 해제
   void _unfocusAll() {
-    _idFocusNode.unfocus();
-    _passwordFocusNode.unfocus();
+    _controller.idFocusNode.unfocus();
+    _controller.passwordFocusNode.unfocus();
   }
 
+  // 로고 위젯 생성 메서드
   Widget _buildLogo(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text('T', style: AppTextStyles.logoTitle(context)),
-        Container(
-          width: ResponsiveValue.width(context, base: 25),
-          height: ResponsiveValue.width(context, base: 25),
-          decoration: BoxDecoration(
-            color: AppColors.accent2,
-            shape: BoxShape.circle,
-          ),
-        ),
-        Text('MAPTO', style: AppTextStyles.logoTitle(context)),
-      ],
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        vertical: ResponsiveValue.height(context, base: 10),
+      ),
+      child: SvgPicture.asset(
+        'assets/icons/tomaptologo.svg',
+        height: ResponsiveValue.height(context, base: 40),
+      ),
     );
   }
 
   Widget _buildIdField() {
     return CustomTextField(
-      controller: _idController,
-      focusNode: _idFocusNode,
+      controller: _controller.idController,
+      focusNode: _controller.idFocusNode,
       labelText: '아이디',
       validator: (value) {
         if (value == null || value.isEmpty) {
@@ -132,20 +116,18 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget _buildPasswordField() {
     return CustomTextField(
-      controller: _passwordController,
-      focusNode: _passwordFocusNode,
+      controller: _controller.passwordController,
+      focusNode: _controller.passwordFocusNode,
       labelText: '비밀번호',
-      obscureText: _obscureText,
+      obscureText: _controller.obscureText,
       suffixIcon: IconButton(
         icon: Icon(
-          _obscureText ? Icons.visibility_off : Icons.visibility,
+          _controller.obscureText ? Icons.visibility_off : Icons.visibility,
           color: AppColors.textSecondary,
           size: ResponsiveValue.width(context, base: 20),
         ),
         onPressed: () {
-          setState(() {
-            _obscureText = !_obscureText;
-          });
+          _controller.togglePasswordVisibility(setState);
         },
       ),
       validator: (value) {
@@ -164,9 +146,7 @@ class _LoginPageState extends State<LoginPage> {
         // 로그인 유지
         GestureDetector(
           onTap: () {
-            setState(() {
-              _rememberMe = !_rememberMe;
-            });
+            _controller.toggleRememberMe(setState);
           },
           child: Row(
             children: [
@@ -176,7 +156,10 @@ class _LoginPageState extends State<LoginPage> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.grey[300]!),
-                  color: _rememberMe ? AppColors.primary : Colors.transparent,
+                  color:
+                      _controller.rememberMe
+                          ? AppColors.primary
+                          : Colors.transparent,
                 ),
               ),
               SizedBox(width: ResponsiveValue.width(context, base: 5)),
@@ -237,7 +220,7 @@ class _LoginPageState extends State<LoginPage> {
                         horizontal: ResponsiveValue.padding(context, base: 35),
                       ),
                       child: Form(
-                        key: _formKey,
+                        key: _controller.formKey,
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.start,
                           children: [
@@ -245,12 +228,30 @@ class _LoginPageState extends State<LoginPage> {
                               height: ResponsiveValue.height(context, base: 40),
                             ),
 
-                            // 로고
+                            // 로고 - 올바른 메서드 호출로 수정
                             _buildLogo(context),
 
                             SizedBox(
                               height: ResponsiveValue.height(context, base: 60),
                             ),
+
+                            // 에러 메시지 표시
+                            if (_controller.errorMessage.isNotEmpty)
+                              Container(
+                                padding: EdgeInsets.symmetric(vertical: 10),
+                                width: double.infinity,
+                                child: Text(
+                                  _controller.errorMessage,
+                                  style: TextStyle(
+                                    color: Colors.red,
+                                    fontSize: ResponsiveValue.fontSize(
+                                      context,
+                                      base: 14,
+                                    ),
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
 
                             // 아이디 입력 필드
                             _buildIdField(),
@@ -303,8 +304,21 @@ class _LoginPageState extends State<LoginPage> {
               ],
             ),
 
+            // 화면 하단에 고정된 내비게이션 바
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: -30, // 화면 최하단에 배치
+              child: BottomNavBar(
+                currentIndex: 4,
+                onTap: (index) {
+                  // 탭 클릭 시 실행할 함수
+                },
+              ),
+            ),
+
             // 로딩 상태일 때 블러 처리된 오버레이
-            if (_isLoading)
+            if (_controller.isLoading)
               Positioned.fill(
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
@@ -325,52 +339,6 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
   }
-}
-
-// 앱 색상 상수
-class AppColors {
-  static const Color primary = Color(0xFFFB233B);
-  static const Color accent = Color(0xFFFB233B);
-  static const Color accent2 = Color(0xFF02A76A);
-  static const Color textPrimary = Colors.black87;
-  static const Color textSecondary = Color(0xFF9DB2CE);
-}
-
-// 반응형 크기 계산 유틸리티
-class ResponsiveValue {
-  static double width(BuildContext context, {required double base}) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    return base * (screenWidth / 375.0); // 기준 디자인 너비
-  }
-
-  static double height(BuildContext context, {required double base}) {
-    final screenHeight = MediaQuery.of(context).size.height;
-    return base * (screenHeight / 812.0); // 기준 디자인 높이
-  }
-
-  static double fontSize(BuildContext context, {required double base}) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    return base * (screenWidth / 375.0);
-  }
-
-  static double padding(BuildContext context, {required double base}) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    return base * (screenWidth / 375.0);
-  }
-}
-
-// 앱 텍스트 스타일 상수
-class AppTextStyles {
-  static TextStyle logoTitle(BuildContext context) => TextStyle(
-    color: AppColors.textPrimary,
-    fontSize: ResponsiveValue.fontSize(context, base: 28),
-    fontWeight: FontWeight.bold,
-  );
-
-  static TextStyle caption(BuildContext context) => TextStyle(
-    fontSize: ResponsiveValue.fontSize(context, base: 12),
-    color: AppColors.textSecondary,
-  );
 }
 
 // 커스텀 텍스트 필드 위젯
