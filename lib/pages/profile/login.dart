@@ -1,176 +1,11 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
-import 'package:tomapto/widgets/bottom_nav_bar.dart';
-
-void main() {
-  runApp(const MyApp());
-}
-
-// 앱 색상 상수
-class AppColors {
-  static const Color primary = Color(0xFFFB233B);
-  static const Color accent = Color(0xFFFB233B);
-  static const Color accent2 = Color(0xFF02A76A);
-  static const Color textPrimary = Colors.black87;
-  static const Color textSecondary = Color(0xFF9DB2CE);
-}
-
-// 앱 텍스트 스타일 상수
-class AppTextStyles {
-  static TextStyle logoTitle(BuildContext context) => TextStyle(
-    color: AppColors.textPrimary,
-    fontSize: ResponsiveValue.fontSize(context, base: 28),
-    fontWeight: FontWeight.bold,
-  );
-
-  static TextStyle caption(BuildContext context) => TextStyle(
-    fontSize: ResponsiveValue.fontSize(context, base: 12),
-    color: AppColors.textSecondary,
-  );
-}
-
-// 반응형 크기 계산 유틸리티
-class ResponsiveValue {
-  static double width(BuildContext context, {required double base}) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    return base * (screenWidth / 375.0); // 기준 디자인 너비
-  }
-
-  static double height(BuildContext context, {required double base}) {
-    final screenHeight = MediaQuery.of(context).size.height;
-    return base * (screenHeight / 812.0); // 기준 디자인 높이
-  }
-
-  static double fontSize(BuildContext context, {required double base}) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    return base * (screenWidth / 375.0);
-  }
-
-  static double padding(BuildContext context, {required double base}) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    return base * (screenWidth / 375.0);
-  }
-}
-
-// 커스텀 텍스트 필드 위젯
-class CustomTextField extends StatelessWidget {
-  final TextEditingController? controller;
-  final FocusNode? focusNode;
-  final String labelText;
-  final bool obscureText;
-  final Widget? suffixIcon;
-  final String? Function(String?)? validator;
-
-  const CustomTextField({
-    super.key,
-    this.controller,
-    this.focusNode,
-    required this.labelText,
-    this.obscureText = false,
-    this.suffixIcon,
-    this.validator,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(labelText, style: AppTextStyles.caption(context)),
-        SizedBox(height: ResponsiveValue.height(context, base: 2)),
-        TextFormField(
-          controller: controller,
-          focusNode: focusNode,
-          obscureText: obscureText,
-          validator: validator,
-          style: TextStyle(
-            fontSize: ResponsiveValue.fontSize(context, base: 16),
-          ),
-          decoration: InputDecoration(
-            border: UnderlineInputBorder(
-              borderSide: BorderSide(
-                color:
-                    focusNode?.hasFocus == true
-                        ? AppColors.primary
-                        : AppColors.textSecondary,
-              ),
-            ),
-            enabledBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: AppColors.textSecondary),
-            ),
-            focusedBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: AppColors.primary),
-            ),
-            suffixIcon: suffixIcon,
-            contentPadding: EdgeInsets.symmetric(vertical: 10), // 패딩 조절
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// 기본 버튼 위젯
-class PrimaryButton extends StatelessWidget {
-  final String text;
-  final VoidCallback onPressed;
-  final Color backgroundColor;
-
-  const PrimaryButton({
-    super.key,
-    required this.text,
-    required this.onPressed,
-    required this.backgroundColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: backgroundColor,
-        minimumSize: Size(
-          MediaQuery.of(context).size.width,
-          ResponsiveValue.height(context, base: 50),
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(
-            ResponsiveValue.width(context, base: 25),
-          ),
-        ),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: ResponsiveValue.fontSize(context, base: 16),
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'TOMAPTO 로그인',
-      theme: ThemeData(
-        primarySwatch: Colors.red,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-        fontFamily: 'Pretendard',
-      ),
-      home: const LoginPage(),
-    );
-  }
-}
+import '../../main.dart'; // AuthManager 클래스를 사용하기 위해 import
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  final Function? onLoginSuccess;
+
+  const LoginPage({Key? key, this.onLoginSuccess}) : super(key: key);
 
   @override
   _LoginPageState createState() => _LoginPageState();
@@ -215,18 +50,35 @@ class _LoginPageState extends State<LoginPage> {
         _isLoading = true;
       });
 
-      // 모의 로그인 프로세스 (실제로는 네트워크 요청 등으로 대체)
-      await Future.delayed(const Duration(seconds: 2));
+      try {
+        // 여기에 기존 백엔드 연결 코드를 사용합니다
 
-      // 로딩 상태 종료
-      setState(() {
-        _isLoading = false;
-      });
+        // 로그인 성공 시 상태 업데이트
+        AuthManager.isLoggedIn = true;
 
-      // 로그인 성공 스낵바
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('로그인 성공!')));
+        // 로딩 상태 종료
+        setState(() {
+          _isLoading = false;
+        });
+
+        // 로그인 성공 스낵바
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('로그인 성공!')));
+
+        // 로그인 성공 콜백이 있으면 호출
+        if (widget.onLoginSuccess != null) {
+          widget.onLoginSuccess!();
+        }
+      } catch (e) {
+        setState(() {
+          _isLoading = false;
+        });
+        // 에러 처리
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('로그인 실패: $e')));
+      }
     }
   }
 
@@ -237,9 +89,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _navigateToSignUp() {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('회원가입 페이지로 이동합니다')));
+    Navigator.pushNamed(context, '/signup');
   }
 
   // 배경 영역을 터치했을 때 포커스 해제
@@ -369,6 +219,12 @@ class _LoginPageState extends State<LoginPage> {
       onTap: _unfocusAll, // 배경을 터치하면 모든 포커스 해제
       child: Scaffold(
         backgroundColor: Colors.white,
+        appBar: AppBar(
+          title: const Text('로그인'),
+          elevation: 0,
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+        ),
         body: Stack(
           children: [
             // 메인 콘텐츠
@@ -386,7 +242,7 @@ class _LoginPageState extends State<LoginPage> {
                           mainAxisAlignment: MainAxisAlignment.start,
                           children: [
                             SizedBox(
-                              height: ResponsiveValue.height(context, base: 80),
+                              height: ResponsiveValue.height(context, base: 40),
                             ),
 
                             // 로고
@@ -447,20 +303,7 @@ class _LoginPageState extends State<LoginPage> {
               ],
             ),
 
-            // 화면 하단에 고정된 내비게이션 바
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: -30, // 화면 최하단에 배치
-              child: BottomNavBar(
-                currentIndex: 4,
-                onTap: (index) {
-                  // 탭 클릭 시 실행할 함수
-                },
-              ),
-            ),
-
-            // 로딩 상태일 때 블러 처리된 오버레이.
+            // 로딩 상태일 때 블러 처리된 오버레이
             if (_isLoading)
               Positioned.fill(
                 child: BackdropFilter(
@@ -478,6 +321,151 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// 앱 색상 상수
+class AppColors {
+  static const Color primary = Color(0xFFFB233B);
+  static const Color accent = Color(0xFFFB233B);
+  static const Color accent2 = Color(0xFF02A76A);
+  static const Color textPrimary = Colors.black87;
+  static const Color textSecondary = Color(0xFF9DB2CE);
+}
+
+// 반응형 크기 계산 유틸리티
+class ResponsiveValue {
+  static double width(BuildContext context, {required double base}) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    return base * (screenWidth / 375.0); // 기준 디자인 너비
+  }
+
+  static double height(BuildContext context, {required double base}) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    return base * (screenHeight / 812.0); // 기준 디자인 높이
+  }
+
+  static double fontSize(BuildContext context, {required double base}) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    return base * (screenWidth / 375.0);
+  }
+
+  static double padding(BuildContext context, {required double base}) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    return base * (screenWidth / 375.0);
+  }
+}
+
+// 앱 텍스트 스타일 상수
+class AppTextStyles {
+  static TextStyle logoTitle(BuildContext context) => TextStyle(
+    color: AppColors.textPrimary,
+    fontSize: ResponsiveValue.fontSize(context, base: 28),
+    fontWeight: FontWeight.bold,
+  );
+
+  static TextStyle caption(BuildContext context) => TextStyle(
+    fontSize: ResponsiveValue.fontSize(context, base: 12),
+    color: AppColors.textSecondary,
+  );
+}
+
+// 커스텀 텍스트 필드 위젯
+class CustomTextField extends StatelessWidget {
+  final TextEditingController? controller;
+  final FocusNode? focusNode;
+  final String labelText;
+  final bool obscureText;
+  final Widget? suffixIcon;
+  final String? Function(String?)? validator;
+
+  const CustomTextField({
+    super.key,
+    this.controller,
+    this.focusNode,
+    required this.labelText,
+    this.obscureText = false,
+    this.suffixIcon,
+    this.validator,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(labelText, style: AppTextStyles.caption(context)),
+        SizedBox(height: ResponsiveValue.height(context, base: 2)),
+        TextFormField(
+          controller: controller,
+          focusNode: focusNode,
+          obscureText: obscureText,
+          validator: validator,
+          style: TextStyle(
+            fontSize: ResponsiveValue.fontSize(context, base: 16),
+          ),
+          decoration: InputDecoration(
+            border: UnderlineInputBorder(
+              borderSide: BorderSide(
+                color:
+                    focusNode?.hasFocus == true
+                        ? AppColors.primary
+                        : AppColors.textSecondary,
+              ),
+            ),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: AppColors.textSecondary),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: AppColors.primary),
+            ),
+            suffixIcon: suffixIcon,
+            contentPadding: const EdgeInsets.symmetric(vertical: 10), // 패딩 조절
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// 기본 버튼 위젯
+class PrimaryButton extends StatelessWidget {
+  final String text;
+  final VoidCallback onPressed;
+  final Color backgroundColor;
+
+  const PrimaryButton({
+    super.key,
+    required this.text,
+    required this.onPressed,
+    required this.backgroundColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: backgroundColor,
+        minimumSize: Size(
+          MediaQuery.of(context).size.width,
+          ResponsiveValue.height(context, base: 50),
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(
+            ResponsiveValue.width(context, base: 25),
+          ),
+        ),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: ResponsiveValue.fontSize(context, base: 16),
+          fontWeight: FontWeight.bold,
         ),
       ),
     );
