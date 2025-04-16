@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:tomapto/controllers/account/login_controller.dart';
+import 'package:tomapto/services/real_time_location_service.dart';
 import 'package:tomapto/widgets/bottom_nav_bar.dart';
 import 'package:tomapto/pages/profile/profile.dart';
 import 'package:tomapto/pages/profile/signup.dart';
@@ -202,7 +203,11 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _login() async {
     final success = await _controller.login(context, setState);
     if (success && mounted) {
-      // 로그인 성공 시 프로필 페이지로 이동
+      // 로그인 성공 시 위치 서비스 시작
+      final locationService = RealTimeLocationService();
+      await locationService.startLocationUpdates();
+
+      // 프로필 페이지로 이동
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const ProfilePage()),
       );

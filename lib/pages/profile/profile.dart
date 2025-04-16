@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:tomapto/services/real_time_location_service.dart';
 import 'package:tomapto/widgets/bottom_nav_bar.dart';
 import 'package:tomapto/controllers/account/profile_controller.dart';
 import 'package:tomapto/pages/profile/login.dart';
@@ -107,6 +108,10 @@ class _ProfilePageState extends State<ProfilePage> {
         false;
 
     if (confirm && mounted) {
+      // 위치 추적 서비스 중지
+      final locationService = RealTimeLocationService();
+      await locationService.stopLocationUpdates();
+
       // 로그아웃 진행
       final success = await _controller.logout(context);
 

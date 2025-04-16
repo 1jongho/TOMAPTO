@@ -3,8 +3,12 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io' show Platform;
+import 'package:tomapto/services/token_manager.dart';
 
 class ApiService {
+  // 토큰 매니저 인스턴스
+  static final _tokenManager = TokenManager();
+
   static String getApiBaseUrl() {
     String baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:8080/api';
     // Android 플랫폼이면서 URL이 localhost를 포함하는 경우
@@ -17,13 +21,12 @@ class ApiService {
     return baseUrl;
   }
 
-  // 토큰 가져오기
+  // 토큰 가져오기 - 토큰 매니저 사용
   static Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
+    return await _tokenManager.getToken();
   }
 
-  // 로그인 요청 메소드
+  // 로그인 요청 메소드 - 토큰 매니저 사용
   static Future<Map<String, dynamic>> login(
     String userId,
     String password,
@@ -48,9 +51,11 @@ class ApiService {
       final responseData = json.decode(response.body);
 
       if (response.statusCode == 200) {
-        // 로그인 성공 시 토큰 저장
+        // 로그인 성공 시 토큰 매니저에 토큰 저장
+        await _tokenManager.saveToken(responseData['token']);
+
+        // 사용자 정보 저장
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('token', responseData['token']);
         await prefs.setString('user_id', responseData['user']['user_id']);
 
         // 로그인 유지 체크 시 추가 설정
@@ -66,11 +71,11 @@ class ApiService {
     }
   }
 
-  // 프로필 정보 가져오기
+  // 프로필 정보 가져오기 - 토큰 매니저 사용
   static Future<Map<String, dynamic>> getProfile() async {
     try {
       final apiBaseUrl = getApiBaseUrl();
-      final token = await getToken();
+      final token = await _tokenManager.getToken();
 
       if (token == null) {
         throw Exception('인증 토큰이 없습니다.');
@@ -93,6 +98,12 @@ class ApiService {
       // 응답 파싱
       final responseData = json.decode(response.body);
 
+      if (response.statusCode == 401) {
+        // 인증 오류 발생 시 토큰 제거
+        await _tokenManager.clearToken();
+        throw Exception('인증이 만료되었습니다. 다시 로그인해주세요.');
+      }
+
       if (response.statusCode != 200) {
         throw Exception(responseData['message'] ?? '프로필 정보를 가져오는데 실패했습니다.');
       }
@@ -104,11 +115,11 @@ class ApiService {
     }
   }
 
-  // 로그아웃 요청
+  // 로그아웃 요청 - 토큰 매니저 사용
   static Future<Map<String, dynamic>> logout() async {
     try {
       final apiBaseUrl = getApiBaseUrl();
-      final token = await getToken();
+      final token = await _tokenManager.getToken();
 
       if (token == null) {
         // 토큰이 없는 경우 (이미 로그아웃 상태)
@@ -130,11 +141,8 @@ class ApiService {
       print('로그아웃 API 응답 코드: ${response.statusCode}');
       print('로그아웃 API 응답 데이터: ${response.body}');
 
-      // 로컬 저장소에서 토큰과 사용자 정보 삭제
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('token');
-      await prefs.remove('user_id');
-      await prefs.remove('remember_me');
+      // 로컬 토큰 삭제
+      await _tokenManager.clearToken();
 
       // 응답 파싱 (실패하더라도 로컬에서는 로그아웃 처리)
       try {
@@ -146,16 +154,22 @@ class ApiService {
       print('로그아웃 API 호출 오류: $e');
 
       // 오류가 발생하더라도 로컬에서는 로그아웃 처리
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.remove('token');
-        await prefs.remove('user_id');
-        await prefs.remove('remember_me');
-
-        return {'success': true, 'message': '서버 연결 오류, 로컬에서 로그아웃 처리 완료'};
-      } catch (e) {
-        throw Exception('로그아웃 처리 중 오류가 발생했습니다: $e');
-      }
+      await _tokenManager.clearToken();
+      return {'success': true, 'message': '서버 연결 오류, 로컬에서 로그아웃 처리 완료'};
     }
+  }
+
+  // 인증이 필요한 API 호출을 위한 헤더 생성
+  static Future<Map<String, String>> getAuthHeaders() async {
+    final token = await _tokenManager.getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': token != null ? 'Bearer $token' : '',
+    };
+  }
+
+  // 인증 상태 확인
+  static Future<bool> isAuthenticated() async {
+    return await _tokenManager.isTokenValid();
   }
 }

@@ -4,18 +4,29 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:io' show Platform;
+import 'package:tomapto/services/api_service.dart';
+import 'package:tomapto/services/token_manager.dart';
+import 'package:tomapto/services/real_time_location_service.dart';
 
 class LoginController {
+  // 텍스트 필드 컨트롤러
   final TextEditingController idController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
   final FocusNode idFocusNode = FocusNode();
   final FocusNode passwordFocusNode = FocusNode();
 
+  // 폼 키
   final formKey = GlobalKey<FormState>();
+
+  // 상태 변수
   bool rememberMe = false;
   bool obscureText = true;
   bool isLoading = false;
   String errorMessage = '';
+
+  // 토큰 매니저와 위치 서비스 인스턴스
+  final _tokenManager = TokenManager();
+  final _locationService = RealTimeLocationService();
 
   // 컨트롤러 dispose 메서드
   void dispose() {
@@ -64,6 +75,9 @@ class LoginController {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setBool('remember_me', rememberMe);
 
+          // 실시간 위치 서비스 시작
+          await _locationService.startLocationUpdates();
+
           return true;
         } else {
           // 로그인 실패 처리
@@ -95,86 +109,25 @@ class LoginController {
 
   // 로그인 상태 확인 메소드
   Future<bool> checkLoginStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
-    final rememberMe = prefs.getBool('remember_me') ?? false;
-
-    // 토큰이 존재하고 로그인 유지가 활성화된 경우 자동 로그인
-    if (token != null && rememberMe) {
-      return true;
-    }
-    return false;
-  }
-}
-
-// API 서비스 클래스
-class ApiService {
-  static String getApiBaseUrl() {
-    String baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:8080/api';
-    // Android 플랫폼이면서 URL이 localhost를 포함하는 경우
-    if (Platform.isAndroid && baseUrl.contains('localhost')) {
-      // 에뮬레이터에서는 10.0.2.2로 localhost 대체
-      return baseUrl.replaceAll('localhost', '10.0.2.2');
-    }
-
-    // 다른 플랫폼이거나 이미 localhost가 아닌 경우 원래 URL 반환
-    return baseUrl;
-  }
-
-  // 로그인 요청 메소드
-  static Future<Map<String, dynamic>> login(
-    String userId,
-    String password,
-  ) async {
     try {
-      // API 기본 URL 가져오기
-      final apiBaseUrl = getApiBaseUrl();
+      // 토큰 유효성 확인
+      bool isTokenValid = await _tokenManager.isTokenValid();
 
-      // 회원가입 경로와 일치하도록 로그인 경로 수정
-      print('API URL: $apiBaseUrl/account/login');
-
-      final response = await http.post(
-        Uri.parse('$apiBaseUrl/account/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'user_id': userId, 'user_password': password}),
-      );
-
-      // 응답 로깅 (디버깅용)
-      print('API 응답 코드: ${response.statusCode}');
-      print('API 응답 데이터: ${response.body}');
-
-      // 응답 파싱
-      final responseData = json.decode(response.body);
-
-      if (response.statusCode == 200) {
-        // 로그인 성공 시 토큰 저장
+      if (isTokenValid) {
+        // 로그인 유지 확인
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('token', responseData['token']);
-        await prefs.setString('user_id', responseData['user']['user_id']);
+        final rememberMe = prefs.getBool('remember_me') ?? false;
 
-        // 로그인 유지 체크 시 추가 설정
-        if (responseData['remember_me'] ?? false) {
-          await prefs.setBool('remember_me', true);
+        if (rememberMe) {
+          // 실시간 위치 서비스 시작
+          await _locationService.startLocationUpdates();
+          return true;
         }
       }
-
-      return responseData;
+      return false;
     } catch (e) {
-      print('API 호출 오류 상세: $e');
-      rethrow; // 오류를 다시 던져서 상위 레벨에서 처리하도록 함
+      print('로그인 상태 확인 오류: $e');
+      return false;
     }
-  }
-
-  // 토큰 가져오기
-  static Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
-  }
-
-  // 로그아웃
-  static Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('token');
-    await prefs.remove('user_id');
   }
 }
