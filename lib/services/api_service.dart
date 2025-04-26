@@ -10,15 +10,8 @@ class ApiService {
   static final _tokenManager = TokenManager();
 
   static String getApiBaseUrl() {
-    String baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:8080/api';
-    // Android 플랫폼이면서 URL이 localhost를 포함하는 경우
-    if (Platform.isAndroid && baseUrl.contains('localhost')) {
-      // 에뮬레이터에서는 10.0.2.2로 localhost 대체
-      return baseUrl.replaceAll('localhost', '10.0.2.2');
-    }
-
-    // 다른 플랫폼이거나 이미 localhost가 아닌 경우 원래 URL 반환
-    return baseUrl;
+    // 개발용 서버 IP (실제 컴퓨터 IP로 교체)
+    return "http://localhost:8080/api"; // 컴퓨터의 실제 IP 주소
   }
 
   // 토큰 가져오기 - 토큰 매니저 사용
