@@ -4,6 +4,7 @@ import 'package:tomapto/services/real_time_location_service.dart';
 import 'package:tomapto/widgets/bottom_nav_bar.dart';
 import 'package:tomapto/controllers/account/profile_controller.dart';
 import 'package:tomapto/pages/profile/login.dart';
+import 'package:tomapto/services/token_service.dart'; // 토큰 서비스 추가
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -59,13 +60,21 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void initState() {
     super.initState();
-    // 사용자 데이터 로드
-    _controller.loadUserData(setState);
+    // 사용자 데이터 로드 및 토큰 유효성 검사
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 화면이 완전히 빌드된 후 토큰 검사 및 데이터 로드
+      _validateTokenAndLoadData();
+    });
+  }
+
+  // 토큰 유효성 검사 및 데이터 로드
+  Future<void> _validateTokenAndLoadData() async {
+    await _controller.loadUserData(context, setState);
   }
 
   // 새로고침 처리
   Future<void> _refreshData() async {
-    await _controller.refreshProfile(setState);
+    await _controller.refreshProfile(context, setState);
   }
 
   // 로그아웃 처리
@@ -176,7 +185,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                   color: const Color(0xFF363636),
                                   size: 24 * (screenWidth / 375),
                                 ),
-                                onPressed: _refreshData,
+                                onPressed: () => _refreshData(),
                               ),
                             ],
                           ),
@@ -195,6 +204,7 @@ class _ProfilePageState extends State<ProfilePage> {
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.05),
                                 blurRadius: 10,
+                                spreadRadius: 1,
                                 offset: const Offset(0, 2),
                               ),
                             ],

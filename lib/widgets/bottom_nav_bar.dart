@@ -6,6 +6,7 @@ import 'package:tomapto/pages/map/naver_map.dart';
 import 'package:tomapto/pages/profile/login.dart'; // 로그인 페이지 임포트
 import 'package:tomapto/pages/profile/profile.dart'; // 프로필 페이지 임포트
 import 'package:shared_preferences/shared_preferences.dart'; // 로그인 상태 확인용
+import 'package:tomapto/services/token_service.dart'; // 토큰 서비스 추가
 
 class BottomNavBar extends StatelessWidget {
   final int currentIndex;
@@ -19,12 +20,37 @@ class BottomNavBar extends StatelessWidget {
     this.curveHeight = 30.0, // 기본 커브 높이 (더 크게 설정할수록 더 볼록해집니다)
   });
 
-  // 로그인 상태 확인 메서드
-  Future<bool> _checkIfUserIsLoggedIn() async {
+  // 로그인 상태 확인 메서드 (토큰 유효성 검증 포함)
+  Future<bool> _checkIfUserIsLoggedIn(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
-    // 예시: 'user_token' 키를 사용하여 로그인 상태 확인
-    final userToken = prefs.getString('user_token');
-    return userToken != null && userToken.isNotEmpty;
+    final token = prefs.getString('token');
+    final rememberMe = prefs.getBool('remember_me') ?? false;
+
+    // 토큰이 없거나 자동 로그인이 활성화되지 않은 경우
+    if (token == null || !rememberMe) {
+      return false;
+    }
+
+    // 토큰 유효성 확인 (만료 여부 검사)
+    try {
+      if (TokenService.isTokenExpired(token)) {
+        // 토큰이 만료된 경우, 로그아웃 처리
+        await _logout();
+        return false;
+      }
+      return true;
+    } catch (e) {
+      print('토큰 검증 오류: $e');
+      return false;
+    }
+  }
+
+  // 로그아웃 메서드
+  Future<void> _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('token');
+    await prefs.remove('user_id');
+    await prefs.remove('remember_me');
   }
 
   // 페이지 이동 처리 메서드
@@ -63,7 +89,7 @@ class BottomNavBar extends StatelessWidget {
         );
         break;
       case 2:
-        // 중앙 버튼 - 카테고리리
+        // 중앙 버튼 - 카테고리
         // 현재는 메인 페이지의 특정 기능만 활성화 (페이지 이동 없음)
         break;
       case 3:
@@ -81,7 +107,7 @@ class BottomNavBar extends StatelessWidget {
         break;
       case 4:
         // 프로필 탭 - 로그인 상태에 따라 다른 페이지로 이동
-        bool isLoggedIn = await _checkIfUserIsLoggedIn();
+        bool isLoggedIn = await _checkIfUserIsLoggedIn(context);
         if (isLoggedIn) {
           Navigator.pushReplacement(
             context,
@@ -93,6 +119,7 @@ class BottomNavBar extends StatelessWidget {
             ),
           );
         } else {
+          // 로그인이 안 된 상태이거나 토큰이 만료된 경우 로그인 페이지로 이동
           Navigator.pushReplacement(
             context,
             PageRouteBuilder(

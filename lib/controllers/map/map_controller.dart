@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 
 class MapController {
@@ -14,6 +13,27 @@ class MapController {
   // 맵 컨트롤러 설정
   void setMapController(NaverMapController controller) {
     _mapController = controller;
+
+    // 바로 locationOverlay를 활성화하지 않고, enableLocationTracking 메서드를 통해 설정
+    // 직접적인 locationOverlay.setActive 호출 제거
+  }
+
+  // 위치 추적 모드 설정 (파란색 동그라미 표시)
+  void enableLocationTracking(NLocationTrackingMode mode) {
+    if (_mapController != null) {
+      _mapController!.setLocationTrackingMode(mode);
+    }
+  }
+
+  // 내 위치 오버레이 설정
+  void configureLocationOverlay({bool isActive = true}) {
+    if (_mapController != null) {
+      // 위치 추적 모드를 통해 내 위치 오버레이 설정
+      // 활성화하려면 위치 추적 모드를 설정하고, 비활성화하려면 none으로 설정
+      _mapController!.setLocationTrackingMode(
+        isActive ? NLocationTrackingMode.noFollow : NLocationTrackingMode.none,
+      );
+    }
   }
 
   // 줌 레벨 설정
@@ -131,12 +151,17 @@ class MapController {
     }
   }
 
+  // 카메라 업데이트
+  void updateCamera(NCameraUpdate nCameraUpdate) {
+    if (_mapController != null) {
+      _mapController!.updateCamera(nCameraUpdate);
+    }
+  }
+
   // 컨트롤러 해제
   void dispose() {
     _mapController = null;
   }
-
-  void updateCamera(NCameraUpdate nCameraUpdate) {}
 }
 
 // 거리 스케일 정보를 담는 클래스

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tomapto/services/api_service.dart';
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:tomapto/services/api_service.dart';
+import 'package:tomapto/services/token_service.dart'; // 토큰 서비스 추가
 
 class ProfileController {
   // 사용자 데이터 상태
@@ -16,11 +14,19 @@ class ProfileController {
   String errorMessage = '';
 
   // 사용자 데이터 로드
-  Future<void> loadUserData(Function setState) async {
+  Future<void> loadUserData(BuildContext context, Function setState) async {
     setState(() {
       isLoading = true;
       errorMessage = '';
     });
+
+    // 토큰 유효성 검사 추가
+    bool isTokenValid = await TokenService.validateToken(context);
+    if (!isTokenValid) {
+      // 토큰이 유효하지 않으면 여기서 함수 종료
+      // TokenService에서 이미 로그인 페이지로 리디렉션 처리함
+      return;
+    }
 
     try {
       // API를 통해 프로필 정보 조회
@@ -71,8 +77,8 @@ class ProfileController {
   }
 
   // 프로필 새로고침
-  Future<void> refreshProfile(Function setState) async {
-    await loadUserData(setState);
+  Future<void> refreshProfile(BuildContext context, Function setState) async {
+    await loadUserData(context, setState);
   }
 
   // 로그아웃 처리

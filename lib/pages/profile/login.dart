@@ -200,7 +200,9 @@ class _LoginPageState extends State<LoginPage> {
   // login.dart 파일의 _LoginPageState 클래스 내부
 
   // 로그인 처리
+  // login.dart 파일의 _login() 함수 수정
   Future<void> _login() async {
+    // _controller.login() 함수에 rememberMe 값을 전달
     final success = await _controller.login(context, setState);
     if (success && mounted) {
       // 로그인 성공 시 위치 서비스 시작

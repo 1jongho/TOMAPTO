@@ -18,7 +18,6 @@ class _NaverMapPageState extends State<NaverMapPage> {
   final MapController _mapController = MapController();
 
   NLatLng? _currentPosition;
-  final Set<NMarker> _markers = {};
   final TextEditingController _searchController = TextEditingController();
 
   // 현재 선택된 네비게이션 탭 인덱스
@@ -84,20 +83,31 @@ class _NaverMapPageState extends State<NaverMapPage> {
 
     // 현재 위치 가져오기
     try {
-      Position position = await Geolocator.getCurrentPosition();
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.bestForNavigation,
+      );
+
       setState(() {
         _currentPosition = NLatLng(position.latitude, position.longitude);
       });
+
       print('현재 위치: ${position.latitude}, ${position.longitude}');
 
       // 카메라 이동
       if (_mapController.controller != null && _currentPosition != null) {
-        // 기본 줌 레벨 15로 설정
-        await _mapController.moveCamera(_currentPosition!, 15);
-        _updateDistanceScaleFromZoom(15);
+        // 기본 줌 레벨 17로 설정
+        await _mapController.moveCamera(_currentPosition!, 17);
+        _updateDistanceScaleFromZoom(17);
 
-        // 마커 업데이트
-        _updateMarkers();
+        // 위치 추적 모드 설정
+        try {
+          _mapController.controller!.setLocationTrackingMode(
+            NLocationTrackingMode.face,
+          );
+          print('위치 추적 모드 설정 완료: face');
+        } catch (e) {
+          print('위치 추적 모드 설정 실패: $e');
+        }
       }
     } catch (e) {
       print('위치 가져오기 실패: $e');
@@ -105,48 +115,6 @@ class _NaverMapPageState extends State<NaverMapPage> {
         SnackBar(
           content: Text('위치 가져오기 실패: $e', style: TextStyle(fontSize: 14)),
         ),
-      );
-    }
-  }
-
-  void _updateMarkers() {
-    print('마커 업데이트 시작');
-    if (_mapController.controller != null && _currentPosition != null) {
-      // 기존 마커 제거
-      if (_markers.isNotEmpty) {
-        _mapController.removeAllMarkers(_markers);
-        _markers.clear();
-      }
-
-      // 새 마커 생성
-      final marker = NMarker(id: '현재위치', position: _currentPosition!);
-
-      // 마커 색상 설정 (빨간색)
-      marker.setIconTintColor(const Color(0xFFFB233B)); // 앱의 주요 색상 (빨간색)
-
-      // 마커 탭 이벤트 설정
-      marker.setOnTapListener((NMarker marker) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '현재 위치: ${_currentPosition!.latitude}, ${_currentPosition!.longitude}',
-              style: TextStyle(fontSize: 14),
-            ),
-          ),
-        );
-      });
-
-      try {
-        // 마커를 맵에 추가
-        _mapController.addMarker(marker);
-        _markers.add(marker);
-        print('마커 추가 성공');
-      } catch (e) {
-        print('마커 추가 실패: $e');
-      }
-
-      print(
-        '마커 추가됨: ${_currentPosition!.latitude}, ${_currentPosition!.longitude}',
       );
     }
   }
@@ -184,7 +152,6 @@ class _NaverMapPageState extends State<NaverMapPage> {
     );
 
     return Scaffold(
-      // AppBar 제거하고 전체 화면을 지도로 채움
       body: Stack(
         children: [
           // 맵 뷰 - 전체 화면 차지
@@ -198,10 +165,19 @@ class _NaverMapPageState extends State<NaverMapPage> {
               ),
               mapType: NMapType.basic,
               contentPadding: contentPadding,
+              locationButtonEnable: false,
             ),
             onMapReady: (controller) {
               print('맵 컨트롤러 준비 완료');
               _mapController.setMapController(controller);
+
+              // 위치 추적 모드 설정
+              try {
+                controller.setLocationTrackingMode(NLocationTrackingMode.face);
+                print('위치 추적 모드 설정 완료: face');
+              } catch (e) {
+                print('위치 추적 모드 설정 실패: $e');
+              }
 
               if (_currentPosition != null) {
                 print('현재 위치로 카메라 이동: $_currentPosition');
@@ -209,7 +185,6 @@ class _NaverMapPageState extends State<NaverMapPage> {
                   _currentPosition!,
                   _mapController.currentZoom,
                 );
-                _updateMarkers();
               }
 
               // 맵이 준비되면 초기 줌 레벨에 따른 거리 스케일 설정
@@ -333,12 +308,26 @@ class _NaverMapPageState extends State<NaverMapPage> {
             ),
           ),
 
-          // 현재 위치 버튼
+          // 현재 위치 버튼 - 커스텀 위치 버튼을 계속 유지
           Positioned(
             bottom: bottomPadding,
             right: rightPadding,
             child: GestureDetector(
-              onTap: _getCurrentLocation,
+              onTap: () {
+                _getCurrentLocation();
+
+                // 위치 추적 모드 설정
+                if (_mapController.controller != null) {
+                  try {
+                    _mapController.controller!.setLocationTrackingMode(
+                      NLocationTrackingMode.face,
+                    );
+                    print('위치 추적 모드 설정 완료: face');
+                  } catch (e) {
+                    print('위치 추적 모드 설정 실패: $e');
+                  }
+                }
+              },
               child: SvgPicture.asset(
                 'assets/icons/gps_B.svg',
                 width: iconSize,
@@ -399,8 +388,7 @@ class _NaverMapPageState extends State<NaverMapPage> {
   }
 }
 
-// ResponsiveValue 클래스가 코드에서 사용되고 있지만 정의되어 있지 않아 추가합니다.
-// 이 클래스는 다른 파일에 정의되어 있을 수 있습니다. 그런 경우 이 부분은 제거하셔도 됩니다.
+// ResponsiveValue 클래스는 그대로 유지
 class ResponsiveValue {
   static double width(BuildContext context, {required double base}) {
     final screenWidth = MediaQuery.of(context).size.width;
