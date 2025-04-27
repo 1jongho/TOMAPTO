@@ -6,8 +6,7 @@ import 'dart:io' show Platform;
 
 class ApiService {
   static String getApiBaseUrl() {
-    String baseUrl =
-        dotenv.env['API_BASE_URL'] ?? 'http://172.30.1.42:8080/api';
+    String baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:8080/api';
     // Android 플랫폼이면서 URL이 localhost를 포함하는 경우
     if (Platform.isAndroid && baseUrl.contains('localhost')) {
       // 에뮬레이터에서는 10.0.2.2로 localhost 대체
