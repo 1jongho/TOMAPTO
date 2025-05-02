@@ -1,4 +1,4 @@
-# tomapto
+# tomap
 
 A new Flutter project.
 
