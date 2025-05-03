@@ -40,11 +40,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       // 화면 렌더링 후 모달 표시를 위한 딜레이
       Future.delayed(Duration(milliseconds: 300), () {
         if (mounted) {
-          showLoginServicesModal(context, message: '즐겨찾기는 로그인 후 이용 가능합니다');
+          showLoginServicesModal(context, message: '메뉴는 로그인 후 이용 가능합니다');
         }
       });
     } else if (isLoggedIn) {
-      // 로그인된 경우 즐겨찾기 데이터 가져오기
+      // 로그인된 경우 메뉴뉴 데이터 가져오기
       _fetchFavorites();
     }
   }
@@ -74,7 +74,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     return baseUrl;
   }
 
-  // 즐겨찾기 목록 가져오기
+  // 메뉴뉴 가져오기
   Future<void> _fetchFavorites() async {
     if (!_isLoggedIn) return;
 
@@ -111,7 +111,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           _isLoading = false;
         });
       } else {
-        print('즐겨찾기 목록 불러오기 실패: ${response.statusCode} - ${response.body}');
+        print('메뉴 불러오기 실패: ${response.statusCode} - ${response.body}');
         setState(() {
           _isLoading = false;
         });
@@ -147,7 +147,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      print('즐겨찾기 목록 불러오기 오류: $e');
+      print('메뉴 불러오기 오류: $e');
       setState(() {
         _isLoading = false;
       });
@@ -251,99 +251,10 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             icon: Icon(Icons.more_vert),
             onPressed: () {
               // 옵션 메뉴 표시
-              _showFavoriteOptions(favorite);
             },
           ),
-          onTap: () {
-            // 선택한 즐겨찾기 위치로 이동하는 기능
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('${favorite['name']} 위치로 이동합니다')),
-            );
-          },
         );
       },
-    );
-  }
-
-  // 즐겨찾기 옵션 메뉴
-  void _showFavoriteOptions(Map<String, dynamic> favorite) {
-    showModalBottomSheet(
-      context: context,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder:
-          (context) => Container(
-            padding: EdgeInsets.symmetric(vertical: 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: Icon(Icons.map, color: Color(0xFFFB233B)),
-                  title: Text('지도에서 보기'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('지도에서 ${favorite['name']} 위치를 표시합니다'),
-                      ),
-                    );
-                  },
-                ),
-                ListTile(
-                  leading: Icon(Icons.edit, color: Colors.blue),
-                  title: Text('수정하기'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('${favorite['name']} 정보를 수정합니다')),
-                    );
-                  },
-                ),
-                ListTile(
-                  leading: Icon(Icons.delete, color: Colors.red),
-                  title: Text('삭제하기'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showDeleteConfirmation(favorite);
-                  },
-                ),
-              ],
-            ),
-          ),
-    );
-  }
-
-  // 삭제 확인 다이얼로그
-  void _showDeleteConfirmation(Map<String, dynamic> favorite) {
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text('즐겨찾기 삭제'),
-            content: Text('\'${favorite['name']}\' 즐겨찾기를 삭제하시겠습니까?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('취소'),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  // 삭제 로직 구현
-                  setState(() {
-                    _favorites.removeWhere(
-                      (item) => item['id'] == favorite['id'],
-                    );
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('${favorite['name']}이(가) 삭제되었습니다')),
-                  );
-                },
-                child: Text('삭제', style: TextStyle(color: Colors.red)),
-              ),
-            ],
-          ),
     );
   }
 
@@ -363,7 +274,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40),
             child: Text(
-              '즐겨찾기 기능을 이용하려면 로그인이 필요합니다',
+              '메뉴 기능을 이용하려면 로그인이 필요합니다',
               style: TextStyle(color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),

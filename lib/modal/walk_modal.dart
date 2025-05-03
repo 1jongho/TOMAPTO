@@ -1,3 +1,4 @@
+// walk_modal.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:tomapto/controllers/map/transit_map_controller.dart';
@@ -29,26 +30,19 @@ class _WalkModalState extends State<WalkModal> {
   bool _isLoading = true;
   bool _isRouteLoading = false;
   bool _hasRoute = false;
+  bool _routeHasBeenSearched = false;
 
-  // 경로 정보
-  int _estimatedTime = 0; // 예상 시간(초)
-  int _totalDistance = 0; // 총 거리(m)
+  int _estimatedTime = 0;
+  int _totalDistance = 0;
 
-  // 도착지 고정값 설정
-  final NLatLng _fixedDestination = NLatLng(
-    37.5573946,
-    126.9560973,
-  ); // 동일한 도착지 사용
+  final NLatLng _fixedDestination = NLatLng(37.5573946, 126.9560973);
 
-  // 도착지 주소 (고정)
   final String _fixedDestinationName = '안양시 동안구';
 
-  // 경로 오버레이 및 마커
   NPathOverlay? _routePathOverlay;
   NMarker? _startMarker;
   NMarker? _destinationMarker;
 
-  // 경로 컨트롤러
   final RouteController _routeController = RouteController();
 
   @override
@@ -57,7 +51,6 @@ class _WalkModalState extends State<WalkModal> {
     _isLoading = !widget.transitMapController.isWalkMapInitialized;
   }
 
-  // 경로 검색 및 표시
   Future<void> _searchAndDisplayRoute() async {
     if (widget.initialPosition == null) {
       print('출발지 위치 정보가 없습니다.');
@@ -69,23 +62,19 @@ class _WalkModalState extends State<WalkModal> {
     });
 
     try {
-      // 경로 계산 요청
       final routeData = await _routeController.searchWalkRoute(
         widget.initialPosition!,
         _fixedDestination,
       );
 
-      // 경로 정보 설정
       setState(() {
         _estimatedTime = routeData['duration'] ?? 0;
         _totalDistance = routeData['distance'] ?? 0;
         _hasRoute = true;
       });
 
-      // 기존 경로 및 마커 제거
       _clearRouteAndMarkers();
 
-      // 경로 좌표 가져오기
       final List<NLatLng> pathCoordinates = [];
       if (routeData['routes'] != null && routeData['routes'].isNotEmpty) {
         final route = routeData['routes'][0];
@@ -94,21 +83,27 @@ class _WalkModalState extends State<WalkModal> {
         }
       }
 
-      // 경로가 있으면 지도에 표시
+      final controller =
+          widget.transitMapController.walkMapController.controller;
+      if (controller == null) {
+        print('맵 컨트롤러가 초기화되지 않았습니다.');
+        return;
+      }
+
+      final markers = widget.transitMapController.getMarkersByMode(
+        TransitMode.walk,
+      );
+      for (var marker in markers) {
+        controller.deleteOverlay(marker.info);
+      }
+      markers.clear();
+
       if (pathCoordinates.isNotEmpty) {
-        // 경로 오버레이 생성 (도보는 파란색 사용)
         _routePathOverlay = RouteRenderer.createPathOverlay(
           'walk_route',
           pathCoordinates,
           color: Colors.blue,
-          width: 6.0, // 보기 좋게 두껍게
-        );
-
-        // 출발지와 도착지 마커 생성
-        _startMarker = RouteRenderer.createStartMarker(
-          widget.initialPosition!,
-          title: '출발',
-          animated: true,
+          width: 6.0,
         );
 
         _destinationMarker = RouteRenderer.createDestinationMarker(
@@ -117,37 +112,36 @@ class _WalkModalState extends State<WalkModal> {
           animated: true,
         );
 
-        // 경로와 마커를 지도에 추가
-        final controller =
-            widget.transitMapController.walkMapController.controller;
-        if (controller != null) {
-          controller.addOverlay(_routePathOverlay!);
-          controller.addOverlay(_startMarker!);
-          controller.addOverlay(_destinationMarker!);
+        widget.transitMapController.updateMarkers(
+          TransitMode.walk,
+          widget.initialPosition!,
+          '출발',
+        );
 
-          // 경로가 모두 보이도록 카메라 이동
-          final minLat = pathCoordinates
-              .map((p) => p.latitude)
-              .reduce((a, b) => a < b ? a : b);
-          final minLng = pathCoordinates
-              .map((p) => p.longitude)
-              .reduce((a, b) => a < b ? a : b);
-          final maxLat = pathCoordinates
-              .map((p) => p.latitude)
-              .reduce((a, b) => a > b ? a : b);
-          final maxLng = pathCoordinates
-              .map((p) => p.longitude)
-              .reduce((a, b) => a > b ? a : b);
+        controller.addOverlay(_routePathOverlay!);
+        controller.addOverlay(_destinationMarker!);
 
-          final bounds = NLatLngBounds(
-            southWest: NLatLng(minLat, minLng),
-            northEast: NLatLng(maxLat, maxLng),
-          );
+        final minLat = pathCoordinates
+            .map((p) => p.latitude)
+            .reduce((a, b) => a < b ? a : b);
+        final minLng = pathCoordinates
+            .map((p) => p.longitude)
+            .reduce((a, b) => a < b ? a : b);
+        final maxLat = pathCoordinates
+            .map((p) => p.latitude)
+            .reduce((a, b) => a > b ? a : b);
+        final maxLng = pathCoordinates
+            .map((p) => p.longitude)
+            .reduce((a, b) => a > b ? a : b);
 
-          controller.updateCamera(
-            NCameraUpdate.fitBounds(bounds, padding: EdgeInsets.all(64)),
-          );
-        }
+        final bounds = NLatLngBounds(
+          southWest: NLatLng(minLat, minLng),
+          northEast: NLatLng(maxLat, maxLng),
+        );
+
+        controller.updateCamera(
+          NCameraUpdate.fitBounds(bounds, padding: EdgeInsets.all(64)),
+        );
       }
     } catch (e) {
       print('경로 검색 오류: $e');
@@ -161,7 +155,6 @@ class _WalkModalState extends State<WalkModal> {
     }
   }
 
-  // 경로와 마커 제거
   void _clearRouteAndMarkers() {
     final controller = widget.transitMapController.walkMapController.controller;
     if (controller != null) {
@@ -170,19 +163,21 @@ class _WalkModalState extends State<WalkModal> {
         _routePathOverlay = null;
       }
 
-      if (_startMarker != null) {
-        controller.deleteOverlay(_startMarker!.info);
-        _startMarker = null;
-      }
-
       if (_destinationMarker != null) {
         controller.deleteOverlay(_destinationMarker!.info);
         _destinationMarker = null;
       }
+
+      final markers = widget.transitMapController.getMarkersByMode(
+        TransitMode.walk,
+      );
+      for (var marker in markers) {
+        controller.deleteOverlay(marker.info);
+      }
+      markers.clear();
     }
   }
 
-  // 내비게이션 페이지로 이동
   void _startNavigation() {
     if (!_hasRoute) return;
 
@@ -203,30 +198,27 @@ class _WalkModalState extends State<WalkModal> {
 
   @override
   Widget build(BuildContext context) {
-    // 컨텐츠 패딩 (지도 사용 시 필요)
-    final contentPadding = EdgeInsets.fromLTRB(0, 0, 0, 160.0); // 모달을 위한 공간 확보
+    final contentPadding = EdgeInsets.fromLTRB(0, 0, 0, 160.0);
 
     return Stack(
       children: [
-        // 도보 네이버 맵
         NaverMap(
           options: NaverMapViewOptions(
             initialCameraPosition: NCameraPosition(
               target:
-                  widget.initialPosition ??
-                  NLatLng(37.5666805, 126.9784147), // 현재 위치 또는 서울 시청 (기본값)
+                  widget.initialPosition ?? NLatLng(37.5666805, 126.9784147),
               zoom: widget.transitMapController.getDefaultZoomLevel(
                 TransitMode.walk,
               ),
             ),
             mapType: NMapType.basic,
             contentPadding: contentPadding,
-            locationButtonEnable: true, // 현재 위치 버튼 활성화
+            locationButtonEnable: true,
           ),
           onMapReady: (controller) {
             print('도보 맵 컨트롤러 준비 완료');
             setState(() {
-              _isLoading = false; // 맵 로딩 완료
+              _isLoading = false;
               widget.transitMapController.walkMapController.setMapController(
                 controller,
               );
@@ -235,14 +227,30 @@ class _WalkModalState extends State<WalkModal> {
                 true,
               );
             });
-
-            // 현재 위치가 있으면 경로 검색 및 표시
             if (widget.initialPosition != null) {
-              _searchAndDisplayRoute();
+              widget.transitMapController.updateMarkers(
+                TransitMode.walk,
+                widget.initialPosition!,
+                widget.originPlace,
+              );
+
+              widget.transitMapController.moveCamera(
+                TransitMode.walk,
+                widget.initialPosition!,
+                widget.transitMapController.getDefaultZoomLevel(
+                  TransitMode.walk,
+                ),
+              );
+
+              if (!_routeHasBeenSearched) {
+                _routeHasBeenSearched = true;
+                Future.delayed(Duration(milliseconds: 500), () {
+                  _searchAndDisplayRoute();
+                });
+              }
             }
           },
           onCameraIdle: () {
-            // 카메라 움직임이 멈추었을 때 줌 레벨 업데이트
             if (widget.transitMapController.walkMapController.controller !=
                 null) {
               widget.transitMapController.walkMapController
@@ -259,19 +267,12 @@ class _WalkModalState extends State<WalkModal> {
           },
           onMapTapped: (point, latLng) {
             print('도보 지도가 탭되었습니다: $latLng');
-            // 위치 업데이트 콜백 호출
-            widget.onLocationUpdated(latLng);
-
-            // 경로 재계산
-            _searchAndDisplayRoute();
           },
         ),
 
-        // 맵 로딩 표시
         if (_isLoading)
           const Center(child: CircularProgressIndicator(color: Colors.blue)),
 
-        // 경로 로딩 표시
         if (_isRouteLoading)
           Positioned(
             bottom: 180,
@@ -313,7 +314,6 @@ class _WalkModalState extends State<WalkModal> {
             ),
           ),
 
-        // 경로 정보 모달
         if (_hasRoute)
           Positioned(
             bottom: 0,
@@ -338,7 +338,6 @@ class _WalkModalState extends State<WalkModal> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 출발지-도착지 정보
                   Row(
                     children: [
                       const Icon(
@@ -372,7 +371,7 @@ class _WalkModalState extends State<WalkModal> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          _fixedDestinationName, // 고정된 도착지 주소
+                          _fixedDestinationName,
                           style: const TextStyle(fontSize: 14),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -381,7 +380,6 @@ class _WalkModalState extends State<WalkModal> {
                   ),
                   const SizedBox(height: 16),
 
-                  // 경로 요약 정보
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -390,7 +388,6 @@ class _WalkModalState extends State<WalkModal> {
                     ),
                     child: Column(
                       children: [
-                        // 도착 예정 시간 추가
                         Text(
                           RouteRenderer.getArrivalTime(_estimatedTime),
                           style: const TextStyle(
@@ -450,7 +447,6 @@ class _WalkModalState extends State<WalkModal> {
                           ],
                         ),
 
-                        // 도보 소모 칼로리 추가 (대략적인 계산)
                         const SizedBox(height: 12),
                         Text(
                           '소모 칼로리: 약 ${(_totalDistance * 0.05).toInt()}kcal',
@@ -464,7 +460,6 @@ class _WalkModalState extends State<WalkModal> {
                   ),
                   const SizedBox(height: 16),
 
-                  // 안내 시작 버튼
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(

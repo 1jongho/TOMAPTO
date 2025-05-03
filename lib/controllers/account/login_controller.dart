@@ -1,9 +1,13 @@
+// Updated login_controller.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:geolocator/geolocator.dart';
 import 'dart:io' show Platform;
+import 'package:tomapto/services/location_service.dart';
+import 'package:tomapto/services/real_time_location_service.dart';
 
 class LoginController {
   final TextEditingController idController = TextEditingController();
@@ -12,7 +16,7 @@ class LoginController {
   final FocusNode passwordFocusNode = FocusNode();
 
   final formKey = GlobalKey<FormState>();
-  bool rememberMe = false;
+  bool rememberMe = true; // 기본값은 true로 설정
   bool obscureText = true;
   bool isLoading = false;
   String errorMessage = '';
@@ -39,7 +43,52 @@ class LoginController {
     });
   }
 
-  // 로그인 메서드
+  // 위치 업데이트를 위한 메서드
+  Future<void> _updateUserLocation() async {
+    try {
+      // 위치 권한 확인
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        permission = await Geolocator.requestPermission();
+
+        if (permission == LocationPermission.denied ||
+            permission == LocationPermission.deniedForever) {
+          print('위치 권한이 거부되었습니다.');
+          return;
+        }
+      }
+
+      // 위치 서비스가 활성화되어 있는지 확인
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        print('위치 서비스가 비활성화되어 있습니다.');
+        return;
+      }
+
+      // 현재 위치 가져오기
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      // 위치 정보를 서버에 업데이트
+      await LocationService.updateMyLocation(
+        position.latitude,
+        position.longitude,
+        position.heading,
+        position.accuracy,
+      );
+
+      print('로그인 후 위치 업데이트 성공: ${position.latitude}, ${position.longitude}');
+
+      // 실시간 위치 업데이트 서비스 시작
+      final realTimeLocationService = RealTimeLocationService();
+      await realTimeLocationService.startLocationUpdates();
+    } catch (e) {
+      print('위치 업데이트 실패: $e');
+    }
+  }
+
   Future<bool> login(BuildContext context, Function setState) async {
     // 폼 유효성 검사
     if (formKey.currentState?.validate() ?? false) {
@@ -50,7 +99,7 @@ class LoginController {
       });
 
       try {
-        print('로그인 시도: ${idController.text}');
+        print('로그인 시도: ${idController.text}, rememberMe: $rememberMe');
 
         // API 호출
         final responseData = await ApiService.login(
@@ -61,7 +110,21 @@ class LoginController {
 
         // 로그인 성공 처리
         if (responseData['success'] == true) {
-          // 로그인 유지 설정은 ApiService.login에서 이미 처리됨
+          // 토큰과 사용자 ID를 저장합니다.
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('token', responseData['token']);
+          await prefs.setString('user_id', responseData['user']['user_id']);
+          await prefs.setBool('remember_me', rememberMe);
+
+          // 중요: 현재 세션 로그인 상태를 항상 true로 설정
+          // 이렇게 하면 remember_me가 false여도 현재 앱 세션에서는 로그인 상태 유지
+          await prefs.setBool('is_logged_in', true);
+
+          print('로그인 성공: 토큰 저장됨. remember_me=$rememberMe, is_logged_in=true');
+
+          // 로그인 성공 후 위치 정보 업데이트
+          await _updateUserLocation();
+
           return true;
         } else {
           // 로그인 실패 처리
@@ -96,9 +159,10 @@ class LoginController {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
     final rememberMe = prefs.getBool('remember_me') ?? false;
+    final isLoggedIn = prefs.getBool('is_logged_in') ?? false;
 
-    // 토큰이 존재하고 로그인 유지가 활성화된 경우 자동 로그인
-    if (token != null && rememberMe) {
+    // 토큰이 있고 로그인 유지가 활성화된 경우 또는 현재 세션에서 로그인한 경우
+    if (token != null && (rememberMe || isLoggedIn)) {
       return true;
     }
     return false;
@@ -169,6 +233,7 @@ class ApiService {
 
         // 로그인 유지 설정 저장
         await prefs.setBool('remember_me', rememberMe);
+        await prefs.setBool('is_logged_in', true); // 현재 세션 로그인 상태 저장
       }
 
       return responseData;
@@ -189,6 +254,7 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
     await prefs.remove('user_id');
-    await prefs.remove('remember_me'); // remember_me 설정도 제거
+    await prefs.remove('is_logged_in'); // 현재 세션 로그인 상태 제거
+    // remember_me 설정은 유지하여 다음 로그인 시 사용자 편의성 향상
   }
 }

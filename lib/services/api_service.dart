@@ -40,8 +40,9 @@ class ApiService {
   // 로그인 요청 메소드
   static Future<Map<String, dynamic>> login(
     String userId,
-    String password,
-  ) async {
+    String password, [
+    bool rememberMe = true, // 기본값 true로 설정 (선택적 파라미터) - 쉼표 제거
+  ]) async {
     try {
       // API 기본 URL 가져오기
       final apiBaseUrl = getApiBaseUrl();
@@ -51,7 +52,11 @@ class ApiService {
       final response = await http.post(
         Uri.parse('$apiBaseUrl/account/login'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({'user_id': userId, 'user_password': password}),
+        body: json.encode({
+          'user_id': userId,
+          'user_password': password,
+          'remember_me': rememberMe, // rememberMe 값 서버에 전송
+        }),
       );
 
       // 응답 로깅 (디버깅용)
@@ -62,15 +67,13 @@ class ApiService {
       final responseData = json.decode(response.body);
 
       if (response.statusCode == 200) {
-        // 로그인 성공 시 토큰 저장
+        // 로그인 성공 시 토큰과 사용자 정보 저장
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('token', responseData['token']);
         await prefs.setString('user_id', responseData['user']['user_id']);
 
-        // 로그인 유지 체크 시 추가 설정
-        if (responseData['remember_me'] ?? false) {
-          await prefs.setBool('remember_me', true);
-        }
+        // remember_me 값 저장 - 앱 종료 후에도 로그인 상태 유지할지 결정
+        await prefs.setBool('remember_me', rememberMe);
       }
 
       return responseData;
@@ -148,7 +151,7 @@ class ApiService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('token');
       await prefs.remove('user_id');
-      await prefs.remove('remember_me');
+      // remember_me 설정은 유지 (사용자 편의성 향상)
 
       // 응답 파싱 (실패하더라도 로컬에서는 로그아웃 처리)
       try {
@@ -164,7 +167,7 @@ class ApiService {
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('token');
         await prefs.remove('user_id');
-        await prefs.remove('remember_me');
+        // remember_me 설정은 유지 (사용자 편의성 향상)
 
         return {'success': true, 'message': '서버 연결 오류, 로컬에서 로그아웃 처리 완료'};
       } catch (e) {

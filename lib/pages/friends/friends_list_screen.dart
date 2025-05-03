@@ -7,11 +7,13 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:io' show Platform;
 import 'package:tomapto/modal/friends_show.dart';
 import 'package:tomapto/modal/friends_setting_modal.dart';
-import 'package:tomapto/modal/login_services.dart'; // 로그인 서비스 모달 추가
+import 'package:tomapto/modal/login_services.dart';
 import 'package:tomapto/widgets/navbar.dart';
 import 'package:tomapto/pages/friends/friends_add.dart';
 import 'package:tomapto/services/socket_service.dart';
-import 'package:tomapto/services/token_service.dart'; // 토큰 서비스 추가
+import 'package:tomapto/services/token_service.dart';
+import 'package:tomapto/pages/profile/login.dart';
+import 'package:tomapto/services/real_time_location_service.dart';
 
 class FriendScreen extends StatefulWidget {
   @override
@@ -55,6 +57,9 @@ class _FriendScreenState extends State<FriendScreen> {
         _fetchFriendsFromServer();
         _fetchFriendRequestsCount();
         _fetchLocationSharingStatus();
+
+        // 실시간 위치 업데이트 서비스 확인 및 필요시 시작
+        _checkAndStartLocationService();
       } else {
         // 로그인되지 않은 경우에만 화면이 로드된 후 실행되도록 WidgetsBinding 사용
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -79,21 +84,39 @@ class _FriendScreenState extends State<FriendScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
+      final isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+
+      // 토큰이 없는 경우
+      if (token == null) {
+        print('토큰이 없습니다. 로그인이 필요합니다.');
+        return false;
+      }
+
+      // 현재 세션에서 로그인한 경우 (is_logged_in이 true)
+      if (isLoggedIn) {
+        // 토큰 만료 여부만 확인
+        if (TokenService.isTokenExpired(token)) {
+          // 토큰이 만료된 경우 로그아웃 처리
+          await _logout();
+          return false;
+        }
+        return true; // 현재 세션 로그인 상태이고 토큰이 유효하면 로그인됨
+      }
+
+      // remember_me 설정이 활성화된 경우
       final rememberMe = prefs.getBool('remember_me') ?? false;
-
-      // 토큰이 없거나 자동 로그인이 비활성화된 경우
-      if (token == null || !rememberMe) {
-        return false;
+      if (rememberMe) {
+        // 토큰 유효성 확인
+        if (TokenService.isTokenExpired(token)) {
+          // 토큰이 만료된 경우 로그아웃 처리
+          await _logout();
+          return false;
+        }
+        return true; // 자동 로그인 설정이 활성화되고 토큰이 유효하면 로그인됨
       }
 
-      // 토큰 유효성 확인
-      if (TokenService.isTokenExpired(token)) {
-        // 토큰이 만료된 경우 로그아웃 처리
-        await _logout();
-        return false;
-      }
-
-      return true;
+      // 현재 세션 로그인도 아니고 자동 로그인도 비활성화된 경우
+      return false;
     } catch (e) {
       print('로그인 상태 확인 오류: $e');
       return false;
@@ -124,8 +147,24 @@ class _FriendScreenState extends State<FriendScreen> {
 
   // 바텀 네비게이션 바 탭 변경 처리
   void _handleNavIndexChanged(int index) {
-    setState(() {
-      _currentNavIndex = index;
+    // 페이지 이동 전 토큰 유효성 다시 확인
+    _checkLoginStatus().then((isLoggedIn) {
+      if (!isLoggedIn && index != 0) {
+        // 홈 화면이 아닌 경우 로그인 필요
+        setState(() {
+          _isLoggedIn = false;
+          _hasShownLoginModal = false; // 다시 모달 표시 가능하도록 설정
+        });
+        _showLoginModalIfNeeded();
+        return;
+      }
+
+      setState(() {
+        _currentNavIndex = index;
+      });
+
+      // 여기서 실제 탭 전환 로직 구현
+      // ...
     });
   }
 
@@ -152,6 +191,22 @@ class _FriendScreenState extends State<FriendScreen> {
 
     // 다른 플랫폼이거나 이미 localhost가 아닌 경우 원래 URL 반환
     return baseUrl;
+  }
+
+  Future<void> _checkAndStartLocationService() async {
+    try {
+      // 위치 권한 확인
+      final hasPermission =
+          await RealTimeLocationService().startLocationUpdates();
+
+      if (hasPermission) {
+        print('실시간 위치 업데이트 서비스 시작됨');
+      } else {
+        print('실시간 위치 업데이트 서비스 시작 실패');
+      }
+    } catch (e) {
+      print('위치 업데이트 서비스 초기화 중 오류 발생: $e');
+    }
   }
 
   // 소켓 초기화 함수
@@ -239,9 +294,40 @@ class _FriendScreenState extends State<FriendScreen> {
           '친구 위치 업데이트: ${data['user_id']} - lat: ${data['latitude']}, lng: ${data['longitude']}',
         );
       });
+
+      // 친구 상태 변경 리스너 등록
+      socketService.onFriendStatusChange.listen((data) {
+        // 친구 상태 변경 처리
+        print('친구 상태 변경: ${data['user_id']} - 온라인: ${data['isOnline']}');
+        _refreshFriendsStatus(data);
+      });
     } catch (e) {
       print('소켓 서비스 초기화 오류: $e');
     }
+  }
+
+  void _refreshFriendsStatus(Map<String, dynamic> statusData) {
+    setState(() {
+      for (var i = 0; i < friends.length; i++) {
+        if (friends[i]['id'] == statusData['user_id']) {
+          // isOnline 값의 타입에 따라 적절히 변환
+          var isOnlineValue = statusData['isOnline'];
+          bool isOnline = false;
+
+          if (isOnlineValue is bool) {
+            isOnline = isOnlineValue;
+          } else if (isOnlineValue is int) {
+            isOnline = (isOnlineValue == 1);
+          } else if (isOnlineValue is String) {
+            isOnline =
+                (isOnlineValue.toLowerCase() == 'true' || isOnlineValue == '1');
+          }
+
+          friends[i]['isOnline'] = isOnline;
+          break;
+        }
+      }
+    });
   }
 
   // 서버에서 친구 목록 가져오기
@@ -258,6 +344,25 @@ class _FriendScreenState extends State<FriendScreen> {
         setState(() {
           _isLoggedIn = false;
         });
+        return;
+      }
+
+      // 토큰 만료 확인
+      if (TokenService.isTokenExpired(token)) {
+        print('토큰이 만료되었습니다');
+        setState(() {
+          _isLoggedIn = false;
+        });
+        // 로그아웃 처리
+        await _logout();
+
+        // 로그인 페이지로 리디렉션
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginPage()),
+          );
+        }
         return;
       }
 
@@ -290,6 +395,14 @@ class _FriendScreenState extends State<FriendScreen> {
         });
         // 로그아웃 처리
         await _logout();
+
+        // 로그인 페이지로 리디렉션
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginPage()),
+          );
+        }
       } else {
         print('친구 목록 불러오기 실패: ${response.statusCode} - ${response.body}');
       }
@@ -312,6 +425,16 @@ class _FriendScreenState extends State<FriendScreen> {
         setState(() {
           _isLoggedIn = false;
         });
+        return;
+      }
+
+      // 토큰 만료 확인
+      if (TokenService.isTokenExpired(token)) {
+        print('토큰이 만료되었습니다');
+        setState(() {
+          _isLoggedIn = false;
+        });
+        await _logout();
         return;
       }
 
@@ -366,6 +489,16 @@ class _FriendScreenState extends State<FriendScreen> {
         setState(() {
           _isLoggedIn = false;
         });
+        return;
+      }
+
+      // 토큰 만료 확인
+      if (TokenService.isTokenExpired(token)) {
+        print('토큰이 만료되었습니다');
+        setState(() {
+          _isLoggedIn = false;
+        });
+        await _logout();
         return;
       }
 
@@ -436,6 +569,21 @@ class _FriendScreenState extends State<FriendScreen> {
     // isOnline 필드가 없는 경우 기본값 false 부여
     if (!friend.containsKey('isOnline')) {
       friend['isOnline'] = false;
+    } else {
+      // isOnline 값의 타입에 따라 적절히 변환
+      var isOnlineValue = friend['isOnline'];
+      bool isOnline = false;
+
+      if (isOnlineValue is bool) {
+        isOnline = isOnlineValue;
+      } else if (isOnlineValue is int) {
+        isOnline = (isOnlineValue == 1);
+      } else if (isOnlineValue is String) {
+        isOnline =
+            (isOnlineValue.toLowerCase() == 'true' || isOnlineValue == '1');
+      }
+
+      friend['isOnline'] = isOnline;
     }
 
     // isSharing 필드가 없는 경우 기본값 false 부여
@@ -541,6 +689,8 @@ class _FriendScreenState extends State<FriendScreen> {
               : null,
     );
   }
+
+  // 친구 목록 컨텐츠 위젯 (로그인 시)
 
   // 친구 목록 컨텐츠 위젯 (로그인 시)
   Widget _buildFriendsListContent() {
@@ -688,7 +838,7 @@ class _FriendScreenState extends State<FriendScreen> {
                                         size: 30,
                                       ),
                                     ),
-                                    // 상태 표시 아이콘을 오른쪽 위로 이동 (온라인 상태 표시)
+                                    // 상태 표시 아이콘을 오른쪽 위로 이동 (온라인 상태 표시) - 여기가 수정된 부분
                                     Positioned(
                                       top: 2,
                                       right: 2,
@@ -697,7 +847,9 @@ class _FriendScreenState extends State<FriendScreen> {
                                         height: 10,
                                         decoration: BoxDecoration(
                                           color:
-                                              validFriend['isOnline']
+                                              _getBoolValue(
+                                                    validFriend['isOnline'],
+                                                  )
                                                   ? Colors.green
                                                   : Colors.red,
                                           shape: BoxShape.circle,
@@ -747,6 +899,18 @@ class _FriendScreenState extends State<FriendScreen> {
         ),
       ],
     );
+  }
+
+  // 다양한 타입의 값을 불리언으로 변환하는 헬퍼 메서드
+  bool _getBoolValue(dynamic value) {
+    if (value is bool) {
+      return value;
+    } else if (value is int) {
+      return value == 1;
+    } else if (value is String) {
+      return value.toLowerCase() == 'true' || value == '1';
+    }
+    return false;
   }
 
   // 로그인 필요 화면 위젯 (로그인 전)

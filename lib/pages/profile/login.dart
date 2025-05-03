@@ -200,7 +200,11 @@ class _LoginPageState extends State<LoginPage> {
 
   // 로그인 처리
   // login.dart 파일의 _login() 함수 수정
+  // 로그인 처리
   Future<void> _login() async {
+    // 키보드 숨기기
+    FocusScope.of(context).unfocus();
+
     // _controller.login() 함수에 rememberMe 값을 전달
     final success = await _controller.login(context, setState);
     if (success && mounted) {

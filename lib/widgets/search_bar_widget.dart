@@ -89,7 +89,7 @@ class SearchBarWidget extends StatelessWidget {
                               bottom: 0,
                             ),
                             decoration: BoxDecoration(
-                              color: Color(0xFFFB233B),
+                              color: Color(0xFFFB5063),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Padding(
@@ -104,7 +104,7 @@ class SearchBarWidget extends StatelessWidget {
                                       originPlace,
                                       style: TextStyle(
                                         fontFamily: "Pretendard",
-                                        fontSize: 20,
+                                        fontSize: 14,
                                       ),
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -137,7 +137,7 @@ class SearchBarWidget extends StatelessWidget {
                           child: Container(
                             margin: const EdgeInsets.only(top: 1, bottom: 0),
                             decoration: BoxDecoration(
-                              color: Color(0xFFFB233B),
+                              color: Color(0xFFFB5063),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Padding(

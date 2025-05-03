@@ -1,3 +1,4 @@
+// Enhanced navbar.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:tomapto/pages/friends/friends_list_screen.dart';
@@ -6,6 +7,7 @@ import 'package:tomapto/pages/profile/login.dart';
 import 'package:tomapto/pages/profile/profile.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tomapto/services/token_service.dart';
+import 'package:tomapto/services/real_time_location_service.dart';
 
 class BottomNavBar extends StatelessWidget {
   final int currentIndex;
@@ -21,30 +23,63 @@ class BottomNavBar extends StatelessWidget {
   Future<bool> _checkIfUserIsLoggedIn(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
-    final rememberMe = prefs.getBool('remember_me') ?? false;
+    final isLoggedIn = prefs.getBool('is_logged_in') ?? false;
 
-    if (token == null || !rememberMe) {
+    // 토큰이 없으면 로그인되지 않은 상태
+    if (token == null) {
       return false;
     }
 
-    try {
-      if (TokenService.isTokenExpired(token)) {
-        await _logout();
+    // 현재 세션에서 로그인한 경우 (is_logged_in이 true)
+    if (isLoggedIn) {
+      // 토큰 만료 여부만 확인
+      try {
+        if (TokenService.isTokenExpired(token)) {
+          await _logout();
+          return false;
+        }
+        return true; // 현재 세션에서 로그인 상태이고 토큰이 유효하면 로그인 상태
+      } catch (e) {
+        print('토큰 검증 오류: $e');
         return false;
       }
-      return true;
-    } catch (e) {
-      print('토큰 검증 오류: $e');
-      return false;
     }
+
+    // 자동 로그인(remember_me)이 활성화된 경우
+    final rememberMe = prefs.getBool('remember_me') ?? false;
+    if (rememberMe) {
+      // 토큰 만료 확인
+      try {
+        if (TokenService.isTokenExpired(token)) {
+          await _logout();
+          return false;
+        }
+        return true;
+      } catch (e) {
+        print('토큰 검증 오류: $e');
+        return false;
+      }
+    }
+
+    // 로그인 세션도 아니고 자동 로그인도 활성화되지 않은 경우
+    return false;
   }
 
   // 로그아웃 메서드
   Future<void> _logout() async {
+    // 실시간 위치 업데이트 서비스 중지
+    try {
+      final locationService = RealTimeLocationService();
+      await locationService.stopLocationUpdates();
+    } catch (e) {
+      print('위치 업데이트 서비스 중지 오류: $e');
+    }
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
     await prefs.remove('user_id');
-    await prefs.remove('remember_me');
+    await prefs.remove('is_logged_in');
+    // remember_me 설정은 유지
   }
 
   // 페이지 이동 처리 메서드
@@ -52,6 +87,9 @@ class BottomNavBar extends StatelessWidget {
     onTap(index);
 
     if (index == currentIndex) return;
+
+    // 네비게이션 전에 로그인 상태 확인 (모든 페이지에 대해)
+    bool isLoggedIn = await _checkIfUserIsLoggedIn(context);
 
     switch (index) {
       case 0:
@@ -67,21 +105,34 @@ class BottomNavBar extends StatelessWidget {
         );
         break;
       case 1:
-        Navigator.pushReplacement(
-          context,
-          PageRouteBuilder(
-            pageBuilder:
-                (context, animation, secondaryAnimation) => FriendScreen(),
-            transitionDuration: Duration.zero,
-            reverseTransitionDuration: Duration.zero,
-          ),
-        );
+        // 친구 페이지로 이동 전에 로그인 상태 확인
+        if (isLoggedIn) {
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder:
+                  (context, animation, secondaryAnimation) => FriendScreen(),
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+            ),
+          );
+        } else {
+          // 로그인되지 않은 경우 로그인 페이지로 이동
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder:
+                  (context, animation, secondaryAnimation) => LoginPage(),
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+            ),
+          );
+        }
         break;
       case 2:
-        // 메뉴 탭
+        // 메뉴 탭 - 로그인 확인 필요시 여기에 추가
         break;
       case 3:
-        bool isLoggedIn = await _checkIfUserIsLoggedIn(context);
         if (isLoggedIn) {
           Navigator.pushReplacement(
             context,

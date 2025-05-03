@@ -1,12 +1,25 @@
 import 'dart:convert';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AddressController {
+  // Dio 인스턴스
+  late final Dio _dio;
+
   // API 키 캐싱
   String? _cachedApiKey;
   String? _cachedSecretKey;
+
+  // 생성자에서 Dio 초기화
+  AddressController() {
+    _dio = Dio(
+      BaseOptions(
+        responseType: ResponseType.json,
+        headers: {'Accept': 'application/json', 'Accept-Charset': 'utf-8'},
+      ),
+    );
+  }
 
   // API 키 초기화
   Future<bool> _initApiKeys() async {
@@ -32,34 +45,28 @@ class AddressController {
       return '서울특별시 강남구'; // 기본 주소
     }
 
-    final url = Uri.parse(
-      'https://naveropenapi.apigw.ntruss.com/map-reversegeocode/v2/gc?'
-      'coords=${position.longitude},${position.latitude}&output=json',
-    );
+    final url =
+        'https://maps.apigw.ntruss.com/map-reversegeocode/v2/gc?'
+        'coords=${position.longitude},${position.latitude}&output=json';
 
     try {
-      final response = await http.get(
+      final response = await _dio.get(
         url,
-        headers: {
-          'X-NCP-APIGW-API-KEY-ID': _cachedApiKey!,
-          'X-NCP-APIGW-API-KEY': _cachedSecretKey!,
-        },
+        options: Options(
+          headers: {
+            'X-NCP-APIGW-API-KEY-ID': _cachedApiKey!,
+            'X-NCP-APIGW-API-KEY': _cachedSecretKey!,
+          },
+        ),
       );
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+        final data = response.data;
 
         // 디버깅: 전체 응답 로깅 (개발중에만 사용)
         print('API 응답: ${json.encode(data)}');
 
         if (data['results'] != null && data['results'].isNotEmpty) {
-          // 디버깅: 결과 유형 로깅
-          final results = data['results'] as List;
-          print('결과 유형:');
-          for (var result in results) {
-            print('- ${result['name']}');
-          }
-
           String address = _parseAddress(data);
 
           if (address.isNotEmpty && address != '주소를 찾을 수 없음') {
@@ -69,7 +76,7 @@ class AddressController {
         }
       }
 
-      print('주소 변환 실패: ${response.statusCode} - ${response.body}');
+      print('주소 변환 실패: ${response.statusCode}');
       return '강원특별자치도 강릉시'; // 변환 실패 시 기본 주소
     } catch (e) {
       print('주소 변환 오류: $e');
@@ -304,29 +311,30 @@ class AddressController {
       return [];
     }
 
-    final url = Uri.parse(
-      'https://naveropenapi.apigw.ntruss.com/map-geocode/v2/geocode?'
-      'query=${Uri.encodeComponent(keyword)}',
-    );
+    final url =
+        'https://naveropenapi.apigw.ntruss.com/map-geocode/v2/geocode?'
+        'query=${Uri.encodeComponent(keyword)}';
 
     try {
-      final response = await http.get(
+      final response = await _dio.get(
         url,
-        headers: {
-          'X-NCP-APIGW-API-KEY-ID': _cachedApiKey!,
-          'X-NCP-APIGW-API-KEY': _cachedSecretKey!,
-        },
+        options: Options(
+          headers: {
+            'X-NCP-APIGW-API-KEY-ID': _cachedApiKey!,
+            'X-NCP-APIGW-API-KEY': _cachedSecretKey!,
+          },
+        ),
       );
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+        final data = response.data;
 
         if (data['addresses'] != null && data['addresses'].isNotEmpty) {
           return List<Map<String, dynamic>>.from(data['addresses']);
         }
       }
 
-      print('주소 검색 실패: ${response.statusCode} - ${response.body}');
+      print('주소 검색 실패: ${response.statusCode}');
       return [];
     } catch (e) {
       print('주소 검색 오류: $e');

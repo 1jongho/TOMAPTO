@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:tomapto/widgets/navbar.dart';
 import 'package:tomapto/controllers/map/map_controller.dart';
+import 'package:tomapto/pages/map/transit.dart';
 
 class NaverMapPage extends StatefulWidget {
   const NaverMapPage({super.key});
@@ -107,6 +108,14 @@ class _NaverMapPageState extends State<NaverMapPage> {
     setState(() {
       _currentNavIndex = index;
     });
+  }
+
+  // Transit 페이지로 이동하는 함수
+  void _navigateToTransitPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const TransitApp()),
+    );
   }
 
   @override
@@ -252,6 +261,37 @@ class _NaverMapPageState extends State<NaverMapPage> {
             ),
           ),
 
+          // Transit 버튼 추가 (현재 위치 버튼 위에 배치)
+          Positioned(
+            bottom: bottomPadding + iconSize + 10, // 현재 위치 버튼 위에 10픽셀 간격으로 배치
+            right: rightPadding,
+            child: GestureDetector(
+              onTap: _navigateToTransitPage,
+              child: Container(
+                width: iconSize,
+                height: iconSize,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 5,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.directions, // 길찾기 아이콘
+                    color: const Color(0xFFFB233B), // TOMAPTO 메인 색상
+                    size: iconSize * 0.55, // 아이콘 크기 조정
+                  ),
+                ),
+              ),
+            ),
+          ),
+
           // 하단 네비게이션 바
           Align(
             alignment: Alignment.bottomCenter,
@@ -266,7 +306,7 @@ class _NaverMapPageState extends State<NaverMapPage> {
   }
 }
 
-// ResponsiveValue 클래스는 그대로 유지
+// ResponsiveValue 클래스
 class ResponsiveValue {
   static double width(BuildContext context, {required double base}) {
     final screenWidth = MediaQuery.of(context).size.width;
