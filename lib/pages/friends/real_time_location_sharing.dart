@@ -1,9 +1,10 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:tomapto/services/socket_service.dart';
+import 'package:tomapto/services/location_service.dart';
+import 'package:tomapto/services/token_service.dart';
 
 class RealTimeLocationSharingPage extends StatefulWidget {
   final Map<String, dynamic> selectedFriend;
@@ -26,51 +27,84 @@ class _RealTimeLocationSharingPageState
   bool _isLoading = true;
   String _errorMessage = '';
 
+  // 소켓 서비스 인스턴스
+  late SocketService _socketService;
   // 위치 정보 자동 갱신을 위한 타이머
   Timer? _locationUpdateTimer;
+  // 소켓 이벤트 구독자
+  StreamSubscription? _locationUpdateSubscription;
+  // 위치 공유 상태 (현재 활성화 여부)
+  bool _isLocationSharingActive = false;
+  // 마지막 업데이트 시간
+  DateTime? _lastUpdateTime;
 
   @override
   void initState() {
     super.initState();
+    _socketService = SocketService();
+    _initSocket();
     _loadLocations();
 
-    // 10초마다 위치 정보 갱신
-    _locationUpdateTimer = Timer.periodic(
-      const Duration(seconds: 10),
-      (_) => _loadLocations(),
-    );
+    // 10초마다 위치 정보 갱신 (API 호출) - 백업 메커니즘
+    _locationUpdateTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      // 마지막 업데이트 후 10초 이상 지났으면 API로 다시 로드
+      final now = DateTime.now();
+      if (_lastUpdateTime == null ||
+          now.difference(_lastUpdateTime!).inSeconds > 10) {
+        _loadLocations();
+      }
+    });
   }
 
   @override
   void dispose() {
     // 타이머 정리
     _locationUpdateTimer?.cancel();
+    // 소켓 이벤트 구독 취소
+    _locationUpdateSubscription?.cancel();
     super.dispose();
   }
 
-  // API 서버 기본 URL 가져오기
-  String getApiBaseUrl() {
-    String baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:8080/api';
-    String? localIp = dotenv.env['LOCAL_IP'];
-
-    // 안드로이드 에뮬레이터에서 실행 중인 경우
-    if (Platform.isAndroid) {
-      // localhost를 사용 중이고 LOCAL_IP가 설정되어 있다면
-      if (baseUrl.contains('localhost') &&
-          localIp != null &&
-          localIp.isNotEmpty) {
-        // localhost를 LOCAL_IP로 대체
-        return baseUrl.replaceAll('localhost', localIp);
+  // 소켓 초기화 및 이벤트 리스너 설정
+  Future<void> _initSocket() async {
+    try {
+      if (!_socketService.isConnected) {
+        await _socketService.initSocket();
       }
 
-      // 에뮬레이터 특정 주소 처리
-      if (baseUrl.contains('localhost')) {
-        return baseUrl.replaceAll('localhost', '10.0.2.2');
-      }
+      // 위치 업데이트 이벤트 구독
+      _locationUpdateSubscription = _socketService.onLocationUpdate.listen((
+        data,
+      ) {
+        // 친구 ID가 선택한 친구의 ID와 일치하는지 확인
+        if (data['user_id'] == widget.selectedFriend['id']) {
+          setState(() {
+            _friendPosition = NLatLng(data['latitude'], data['longitude']);
+            _lastUpdateTime = DateTime.now();
+            _updateMapMarkers();
+          });
+          print('소켓으로 친구 위치 업데이트: ${data['latitude']}, ${data['longitude']}');
+        }
+      });
+
+      // 위치 공유 종료 이벤트 리스너 추가
+      _socketService.onLocationSharingStopped.listen((data) {
+        if (data['user_id'] == widget.selectedFriend['id']) {
+          setState(() {
+            _isLocationSharingActive = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${widget.selectedFriend['name']}님이 위치 공유를 종료했습니다'),
+            ),
+          );
+        }
+      });
+
+      print('소켓 이벤트 리스너 설정 완료');
+    } catch (e) {
+      print('소켓 초기화 오류: $e');
     }
-
-    // 그 외의 경우 원래 URL 반환
-    return baseUrl;
   }
 
   // DB에서 내 위치와 친구 위치 정보 로드
@@ -81,52 +115,64 @@ class _RealTimeLocationSharingPageState
     });
 
     try {
-      // 토큰 가져오기
+      // 토큰 유효성 확인
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
-      final userId = prefs.getString('user_id'); // 현재 사용자 ID
 
-      if (token == null) {
+      if (token == null || TokenService.isTokenExpired(token)) {
         setState(() {
-          _errorMessage = '로그인이 필요합니다';
+          _errorMessage = '로그인이 필요하거나 세션이 만료되었습니다';
           _isLoading = false;
         });
         return;
       }
 
-      final apiBaseUrl = getApiBaseUrl();
+      // 1. 내 위치 가져오기
+      final myLocationData = await LocationService.getCurrentLocation();
+      if (myLocationData != null) {
+        setState(() {
+          _myPosition = NLatLng(
+            myLocationData.latitude,
+            myLocationData.longitude,
+          );
+        });
+      } else {
+        print('내 위치 정보를 가져오는데 실패했습니다.');
+      }
+
+      // 2. 친구 위치 정보 가져오기
       final friendId = widget.selectedFriend['id'];
+      final friendLocationData = await LocationService.getFriendLocation(
+        friendId,
+      );
 
-      // 서버에서 직접 위치 데이터 가져오는 대신, 데이터베이스에서 직접 가져오기
-      // 이 부분은 개발용 임시 코드입니다
-      setState(() {
-        // 데이터베이스에서 찾은 위치 정보로 설정
-        // 내 위치 (예: tomapto1의 위치)
-        _myPosition = NLatLng(37.7418735, 128.8923122);
-
-        // 선택한 친구 ID에 해당하는 위치 찾기
-        if (friendId == '1' || friendId.contains('tomapto1')) {
-          _friendPosition = NLatLng(37.7418735, 128.8923122); // tomapto1 위치
-        } else if (friendId == '2' || friendId.contains('tomapto2')) {
-          _friendPosition = NLatLng(37.7418693, 128.8923195); // tomapto2 위치
-        } else if (friendId == '3' || friendId.contains('tomapto3')) {
-          _friendPosition = NLatLng(37.7418649, 128.8923197); // tomapto3 위치
-        } else if (friendId == '4' || friendId.contains('tomapto4')) {
-          _friendPosition = NLatLng(37.7418725, 128.8923159); // tomapto4 위치
-        } else if (friendId == '5' || friendId.contains('tomapto5')) {
-          _friendPosition = NLatLng(37.7418295, 128.8923304); // tomapto5 위치
-        } else {
-          // 기본값 또는 다른 ID의 경우
-          _friendPosition = NLatLng(37.7418693, 128.8923195); // 기본값
-        }
-
-        _isLoading = false;
-      });
+      if (friendLocationData != null) {
+        setState(() {
+          _friendPosition = NLatLng(
+            friendLocationData['latitude'],
+            friendLocationData['longitude'],
+          );
+          _isLocationSharingActive = true;
+          _lastUpdateTime = DateTime.now();
+        });
+        print(
+          '친구 위치 정보 로드 성공: 위도=${friendLocationData['latitude']}, 경도=${friendLocationData['longitude']}',
+        );
+      } else {
+        print('친구 위치 정보를 가져오는데 실패했습니다.');
+        setState(() {
+          _isLocationSharingActive = false;
+        });
+      }
 
       // 위치 데이터를 얻은 후 마커 업데이트
       if (_mapController != null) {
         _updateMapMarkers();
       }
+
+      setState(() {
+        _isLoading = false;
+      });
     } catch (e) {
       print('위치 정보 로드 오류: $e');
       setState(() {
@@ -134,22 +180,20 @@ class _RealTimeLocationSharingPageState
         _isLoading = false;
       });
 
-      // 오류 발생 시 기본 위치 설정
-      if (_myPosition == null) {
-        _myPosition = NLatLng(37.7418735, 128.8923122); // 기본값
-      }
-      if (_friendPosition == null) {
-        _friendPosition = NLatLng(37.7418693, 128.8923195); // 기본값
+      // 에러 발생 시 기본 위치 설정
+      if (_myPosition == null && _mapController != null) {
+        // 서울 시청 좌표 (기본값)
+        _myPosition = NLatLng(37.5666805, 126.9784147);
       }
     }
   }
 
   // 내 위치 마커 생성 함수 (빨간색)
-  Future<NMarker> _createMyLocationMarker() async {
+  NMarker _createMyLocationMarker() {
     final marker = NMarker(id: 'my_location', position: _myPosition!);
 
     // 마커 이미지 설정
-    marker.setIcon(await _createLocationMarkerIcon(Colors.red));
+    marker.setIconTintColor(Colors.red);
 
     // 앵커 포인트 조정
     marker.setAnchor(NPoint(0.5, 1.0));
@@ -168,11 +212,11 @@ class _RealTimeLocationSharingPageState
   }
 
   // 친구 위치 마커 생성 함수 (초록색)
-  Future<NMarker> _createFriendLocationMarker() async {
+  NMarker _createFriendLocationMarker() {
     final marker = NMarker(id: 'friend_location', position: _friendPosition!);
 
     // 마커 이미지 설정
-    marker.setIcon(await _createLocationMarkerIcon(Colors.green));
+    marker.setIconTintColor(Colors.green);
 
     // 앵커 포인트 조정
     marker.setAnchor(NPoint(0.5, 1.0));
@@ -190,16 +234,6 @@ class _RealTimeLocationSharingPageState
     return marker;
   }
 
-  // 마커 아이콘 생성 함수 (색상을 파라미터로 받음)
-  Future<NOverlayImage> _createLocationMarkerIcon(Color primaryColor) async {
-    // 네이버 맵의 NOverlayImage.fromWidget 사용
-    return await NOverlayImage.fromWidget(
-      widget: _LocationMarkerWidget(color: primaryColor),
-      size: Size(20, 30), // 마커 크기
-      context: context,
-    );
-  }
-
   // 지도 마커 업데이트
   Future<void> _updateMapMarkers() async {
     if (_mapController == null) return;
@@ -214,7 +248,7 @@ class _RealTimeLocationSharingPageState
 
     // 내 위치 마커 추가
     if (_myPosition != null) {
-      final myMarker = await _createMyLocationMarker();
+      final myMarker = _createMyLocationMarker();
 
       myMarker.setOnTapListener((NMarker marker) {
         ScaffoldMessenger.of(
@@ -228,7 +262,7 @@ class _RealTimeLocationSharingPageState
 
     // 친구 위치 마커 추가
     if (_friendPosition != null) {
-      final friendMarker = await _createFriendLocationMarker();
+      final friendMarker = _createFriendLocationMarker();
 
       friendMarker.setOnTapListener((NMarker marker) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -290,29 +324,260 @@ class _RealTimeLocationSharingPageState
     minLng -= 0.01;
     maxLng += 0.01;
 
-    // 중심점 계산
-    double centerLat = (minLat + maxLat) / 2;
-    double centerLng = (minLng + maxLng) / 2;
+    // 경계 객체 생성
+    final bounds = NLatLngBounds(
+      southWest: NLatLng(minLat, minLng),
+      northEast: NLatLng(maxLat, maxLng),
+    );
 
-    // 줌 레벨 계산 (거리에 반비례)
-    double zoom = 13.0;
-    if (maxLat - minLat < 0.01 && maxLng - minLng < 0.01)
-      zoom = 15.0;
-    else if (maxLat - minLat < 0.05 && maxLng - minLng < 0.05)
-      zoom = 13.0;
-    else if (maxLat - minLat < 0.1 && maxLng - minLng < 0.1)
-      zoom = 12.0;
-    else if (maxLat - minLat < 0.5 && maxLng - minLng < 0.5)
-      zoom = 10.0;
-    else
-      zoom = 9.0;
-
+    // 경계에 맞게 카메라 조정 - 패딩을 double 값으로 전달
     _mapController!.updateCamera(
-      NCameraUpdate.withParams(
-        target: NLatLng(centerLat, centerLng),
-        zoom: zoom,
+      NCameraUpdate.fitBounds(
+        bounds,
+        padding: EdgeInsets.all(50.0), // EdgeInsets 객체로 변경
       ),
     );
+  }
+
+  // 위치 공유 종료 요청
+  Future<void> _endLocationSharing() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // 종료 확인 다이얼로그
+      final result = await showDialog<bool>(
+        context: context,
+        builder:
+            (context) => AlertDialog(
+              title: Text('위치 공유 종료'),
+              content: Text(
+                '${widget.selectedFriend['name']}님과의 위치 공유를 종료하시겠습니까?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: Text('취소'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  child: Text('종료'),
+                ),
+              ],
+            ),
+      );
+
+      if (result != true) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // 소켓을 통한 위치 공유 종료 요청
+      _socketService.stopLocationSharing(widget.selectedFriend['id']);
+
+      // API를 통한 위치 공유 종료 요청
+      final success = await LocationService.endLocationSharing(
+        widget.selectedFriend['id'],
+      );
+
+      setState(() {
+        _isLoading = false;
+        if (success) {
+          _isLocationSharingActive = false;
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('위치 공유가 종료되었습니다')));
+          // 공유 종료 후 페이지 닫기
+          Navigator.pop(context);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('위치 공유 종료 요청 실패. 나중에 다시 시도하세요.')),
+          );
+        }
+      });
+    } catch (e) {
+      print('위치 공유 종료 오류: $e');
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('위치 공유 종료 중 오류가 발생했습니다.')));
+    }
+  }
+
+  // 위치 공유 시작 요청
+  Future<void> _startLocationSharing() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // 시작 확인 다이얼로그
+      final result = await showDialog<bool>(
+        context: context,
+        builder:
+            (context) => AlertDialog(
+              title: Text('위치 공유 시작'),
+              content: Text(
+                '${widget.selectedFriend['name']}님과 위치 공유를 시작하시겠습니까?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: Text('취소'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  style: TextButton.styleFrom(foregroundColor: Colors.green),
+                  child: Text('시작'),
+                ),
+              ],
+            ),
+      );
+
+      if (result != true) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // 소켓을 통한 위치 공유 시작 요청
+      _socketService.startLocationSharing(widget.selectedFriend['id'], null);
+
+      // API를 통한 위치 공유 시작 요청
+      final success = await LocationService.requestLocationSharing(
+        widget.selectedFriend['id'],
+      );
+
+      setState(() {
+        _isLoading = false;
+        if (success) {
+          _isLocationSharingActive = true;
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('위치 공유가 시작되었습니다')));
+          // 위치 정보 새로고침
+          _loadLocations();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('위치 공유 시작 요청 실패. 나중에 다시 시도하세요.')),
+          );
+        }
+      });
+    } catch (e) {
+      print('위치 공유 시작 오류: $e');
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('위치 공유 시작 중 오류가 발생했습니다.')));
+    }
+  }
+
+  // 친구 위치 히스토리 불러오기
+  Future<void> _loadFriendLocationHistory() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // API를 통한 위치 히스토리 조회
+      final historyData = await LocationService.getLocationHistory(
+        widget.selectedFriend['id'],
+      );
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (historyData != null && historyData.isNotEmpty) {
+        // 히스토리 데이터를 표시하는 다이얼로그
+        showDialog(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: Text('${widget.selectedFriend['name']}님의 위치 기록'),
+                content: Container(
+                  width: double.maxFinite,
+                  height: 300,
+                  child: ListView.builder(
+                    itemCount: historyData.length,
+                    itemBuilder: (context, index) {
+                      final item = historyData[index];
+                      final date = DateTime.parse(item['created_at']);
+                      return ListTile(
+                        title: Text(
+                          '${date.year}-${date.month}-${date.day} ${date.hour}:${date.minute}:${date.second}',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                        subtitle: Text(
+                          '위도: ${item['latitude'].toStringAsFixed(6)}, 경도: ${item['longitude'].toStringAsFixed(6)}',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        // 클릭 시 해당 위치로 이동
+                        onTap: () {
+                          Navigator.pop(context);
+                          if (_mapController != null) {
+                            _mapController!.updateCamera(
+                              NCameraUpdate.withParams(
+                                target: NLatLng(
+                                  item['latitude'],
+                                  item['longitude'],
+                                ),
+                                zoom: 16,
+                              ),
+                            );
+                          }
+                        },
+                      );
+                    },
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('닫기'),
+                  ),
+                ],
+              ),
+        );
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('위치 기록이 없습니다')));
+      }
+    } catch (e) {
+      print('위치 히스토리 로드 오류: $e');
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('위치 기록을 불러오는 중 오류가 발생했습니다.')));
+    }
+  }
+
+  // 마지막 업데이트 시간 포맷팅
+  String _formatLastUpdateTime(DateTime time) {
+    final now = DateTime.now();
+    final difference = now.difference(time);
+
+    if (difference.inSeconds < 60) {
+      return '${difference.inSeconds}초 전';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}분 전';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}시간 전';
+    } else {
+      return '${time.month}월 ${time.day}일 ${time.hour}:${time.minute.toString().padLeft(2, '0')}';
+    }
   }
 
   @override
@@ -363,6 +628,10 @@ class _RealTimeLocationSharingPageState
                   _mapController!.updateCamera(
                     NCameraUpdate.withParams(target: _myPosition!, zoom: 15),
                   );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('내 위치 정보를 가져올 수 없습니다.')),
+                  );
                 }
               },
             ),
@@ -409,36 +678,89 @@ class _RealTimeLocationSharingPageState
                 ),
               ),
             ),
+
+          // 위치 공유 상태 메시지
+          if (!_isLocationSharingActive && !_isLoading && _errorMessage.isEmpty)
+            Container(
+              color: Colors.white.withOpacity(0.7),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.location_off, color: Colors.orange, size: 48),
+                      SizedBox(height: 12),
+                      Text(
+                        '${widget.selectedFriend['name']}님과 위치 공유가 활성화되지 않았습니다.',
+                        style: TextStyle(fontSize: 16),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _startLocationSharing,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                        ),
+                        child: Text('위치 공유 시작하기'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // 위치 공유 시간 정보
+          if (_isLocationSharingActive && _lastUpdateTime != null)
+            Positioned(
+              top: 8,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    '마지막 업데이트: ${_formatLastUpdateTime(_lastUpdateTime!)}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
-    );
-  }
-}
-
-// 커스텀 마커 위젯
-class _LocationMarkerWidget extends StatelessWidget {
-  final Color color;
-
-  const _LocationMarkerWidget({Key? key, required this.color})
-    : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 핀 머리 부분 (원형)
-        Container(
-          width: 24,
-          height: 24,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: color,
-            border: Border.all(color: Colors.white, width: 2),
-            boxShadow: [],
-          ),
-        ),
-      ],
+      // 위치 공유 종료 버튼 (하단에 고정)
+      bottomNavigationBar:
+          _isLocationSharingActive
+              ? Container(
+                color: Colors.white,
+                padding: EdgeInsets.all(16),
+                child: ElevatedButton(
+                  onPressed: _endLocationSharing,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text(
+                    '위치 공유 종료',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              )
+              : null,
     );
   }
 }

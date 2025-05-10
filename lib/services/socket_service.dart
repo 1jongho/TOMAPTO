@@ -96,9 +96,6 @@ class SocketService {
       final socketUrl = _getSocketUrl();
       print('소켓 서버 연결 시도: $socketUrl');
 
-      // 소켓 디버깅 로그 활성화 부분 제거
-      // IO.Socket.enableLogging = true; // 이 부분 제거
-
       // 소켓 객체 생성 및 설정
       _socket = IO.io(
         socketUrl,
@@ -202,25 +199,39 @@ class SocketService {
   }
 
   // 친구 요청 수락
-  void acceptFriendRequest(String requestId) {
+  void acceptFriendRequest(dynamic requestId) {
     if (_socket == null || !_socket!.connected) {
       print('소켓이 연결되어 있지 않습니다.');
       return;
     }
 
-    _socket!.emit('accept_friend_request', {'request_id': requestId});
-    print('친구 요청 수락: $requestId');
+    // requestId를 문자열로 변환하여 사용
+    String stringRequestId = requestId?.toString() ?? '';
+    if (stringRequestId.isEmpty) {
+      print('유효하지 않은 요청 ID입니다.');
+      return;
+    }
+
+    _socket!.emit('accept_friend_request', {'request_id': stringRequestId});
+    print('친구 요청 수락: $stringRequestId');
   }
 
   // 친구 요청 거절
-  void rejectFriendRequest(String requestId) {
+  void rejectFriendRequest(dynamic requestId) {
     if (_socket == null || !_socket!.connected) {
       print('소켓이 연결되어 있지 않습니다.');
       return;
     }
 
-    _socket!.emit('reject_friend_request', {'request_id': requestId});
-    print('친구 요청 거절: $requestId');
+    // requestId를 문자열로 변환하여 사용
+    String stringRequestId = requestId?.toString() ?? '';
+    if (stringRequestId.isEmpty) {
+      print('유효하지 않은 요청 ID입니다.');
+      return;
+    }
+
+    _socket!.emit('reject_friend_request', {'request_id': stringRequestId});
+    print('친구 요청 거절: $stringRequestId');
   }
 
   // 위치 공유 시작 (durationMinutes가 null이면 무제한 공유)

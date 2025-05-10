@@ -1,4 +1,4 @@
-// services/location_service.dart
+// Enhanced location_service.dart
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
@@ -14,7 +14,7 @@ class LocationService {
     String baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:8080/api';
     String? localIp = dotenv.env['LOCAL_IP'];
 
-    // 디버그 모드이고 안드로이드 플랫폼인 경우
+    // 안드로이드 플랫폼인 경우
     if (Platform.isAndroid) {
       // localhost를 사용 중이고 LOCAL_IP가 설정되어 있다면
       if (baseUrl.contains('localhost') &&
@@ -85,6 +85,9 @@ class LocationService {
 
       if (response.statusCode == 200) {
         print('위치 업데이트 성공: $latitude, $longitude');
+
+        // 위치 히스토리 DB에 기록 - 서버 측에서 자동으로 이루어지므로 클라이언트에서는 별도 작업 불필요
+
         return true;
       } else if (response.statusCode == 401) {
         print('위치 업데이트 실패: 인증 오류 - 다시 로그인이 필요합니다');
@@ -96,6 +99,40 @@ class LocationService {
     } catch (e) {
       print('위치 업데이트 오류: $e');
       return false;
+    }
+  }
+
+  // 현재 위치 가져오기
+  static Future<Position?> getCurrentLocation() async {
+    try {
+      // 위치 권한 확인
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied ||
+            permission == LocationPermission.deniedForever) {
+          print('위치 권한이 거부되었습니다.');
+          return null;
+        }
+      }
+
+      // 위치 서비스가 활성화되어 있는지 확인
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        print('위치 서비스가 비활성화되어 있습니다.');
+        return null;
+      }
+
+      // 현재 위치 가져오기
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      return position;
+    } catch (e) {
+      print('현재 위치 가져오기 오류: $e');
+      return null;
     }
   }
 
@@ -125,9 +162,19 @@ class LocationService {
         headers: {'Authorization': 'Bearer $token'},
       );
 
+      // 응답 상태 코드에 따른 처리
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        print('친구 위치 조회 성공: $data');
         return data;
+      } else if (response.statusCode == 403) {
+        // 위치 공유가 되어있지 않은 경우
+        print('친구 위치 조회 실패: 위치 공유 관계가 없습니다');
+        return null;
+      } else if (response.statusCode == 404) {
+        // 친구의 위치 정보가 없는 경우
+        print('친구 위치 정보가 없습니다.');
+        return null;
       } else {
         print('친구 위치 조회 실패: ${response.statusCode} - ${response.body}');
         return null;
@@ -161,7 +208,7 @@ class LocationService {
 
       final apiBaseUrl = getApiBaseUrl();
 
-      // durationMinutes 값을 처리하는 방식 변경
+      // 요청 바디 생성
       final Map<String, dynamic> requestBody = {'friend_id': friendId};
 
       // durationMinutes가 null이 아니고 양수인 경우에만 추가
@@ -180,6 +227,7 @@ class LocationService {
         body: json.encode(requestBody),
       );
 
+      // 응답 상태 코드에 따른 처리
       if (response.statusCode == 200) {
         print('위치 공유 요청 성공');
         return true;
@@ -221,9 +269,13 @@ class LocationService {
         body: json.encode({'friend_id': friendId}),
       );
 
+      // 응답 상태 코드에 따른 처리
       if (response.statusCode == 200) {
         print('위치 공유 종료 성공');
         return true;
+      } else if (response.statusCode == 404) {
+        print('활성화된 위치 공유가 없습니다.');
+        return false;
       } else {
         print('위치 공유 종료 실패: ${response.statusCode} - ${response.body}');
         return false;
@@ -258,8 +310,10 @@ class LocationService {
         headers: {'Authorization': 'Bearer $token'},
       );
 
+      // 응답 상태 코드에 따른 처리
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
+        print('위치 공유 목록 조회 성공: 총 ${data.length}개');
         return data.cast<Map<String, dynamic>>();
       } else {
         print('위치 공유 목록 조회 실패: ${response.statusCode} - ${response.body}');
@@ -291,6 +345,49 @@ class LocationService {
     } catch (e) {
       print('위치 권한 확인 오류: $e');
       return false;
+    }
+  }
+
+  // 위치 히스토리 조회
+  // 위치 히스토리 조회
+  static Future<List<Map<String, dynamic>>?> getLocationHistory(
+    String friendId, {
+    int limit = 20,
+  }) async {
+    try {
+      // 토큰 가져오기
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null) {
+        print('로그인이 필요합니다');
+        return null;
+      }
+
+      // 토큰 유효성 검사
+      if (TokenService.isTokenExpired(token)) {
+        print('토큰이 만료되었습니다. 다시 로그인해주세요.');
+        return null;
+      }
+
+      final apiBaseUrl = getApiBaseUrl();
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/location/history/$friendId?limit=$limit'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      // 응답 상태 코드에 따른 처리
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        print('위치 히스토리 조회 성공: 총 ${data.length}개 기록');
+        return data.cast<Map<String, dynamic>>();
+      } else {
+        print('위치 히스토리 조회 실패: ${response.statusCode} - ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('위치 히스토리 조회 오류: $e');
+      return null;
     }
   }
 }

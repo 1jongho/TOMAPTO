@@ -168,6 +168,71 @@ class _FriendScreenState extends State<FriendScreen> {
     });
   }
 
+  // 사이드 메뉴 표시
+  void _showSideMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return Container(
+          padding: EdgeInsets.symmetric(vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(Icons.person_add),
+                title: Row(
+                  children: [
+                    Text('친구 추가'),
+                    SizedBox(width: 8),
+                    if (_newRequestsCount > 0)
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$_newRequestsCount',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ),
+                  ],
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder:
+                          (context) => FriendsAddPage(initialSearchTerm: ''),
+                    ),
+                  ).then((_) {
+                    _fetchFriendsFromServer();
+                    _fetchFriendRequestsCount();
+                  });
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.block),
+                title: Text('차단 목록'),
+                onTap: () {
+                  Navigator.pop(context);
+                  // 차단 목록 페이지로 이동
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('차단 목록 기능은 준비 중입니다')));
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   // API 서버 기본 URL 가져오기
   String _getApiBaseUrl() {
     String baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:8080/api';
@@ -616,7 +681,43 @@ class _FriendScreenState extends State<FriendScreen> {
             fontSize: 18,
           ),
         ),
-        centerTitle: true, // 제목 중앙 정렬
+        centerTitle: true,
+        actions: [
+          // 알림 아이콘 추가
+          Stack(
+            children: [
+              IconButton(
+                icon: Icon(Icons.menu, color: Colors.black),
+                onPressed: () {
+                  // 사이드 메뉴 표시
+                  _showSideMenu(context);
+                },
+              ),
+              if (_newRequestsCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: BoxConstraints(minWidth: 14, minHeight: 14),
+                    child: Text(
+                      '$_newRequestsCount',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
       body:
           _isLoading
@@ -689,8 +790,6 @@ class _FriendScreenState extends State<FriendScreen> {
               : null,
     );
   }
-
-  // 친구 목록 컨텐츠 위젯 (로그인 시)
 
   // 친구 목록 컨텐츠 위젯 (로그인 시)
   Widget _buildFriendsListContent() {
