@@ -1,25 +1,15 @@
 import 'dart:convert';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
-import 'package:dio/dio.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:math';
 
 class AddressController {
-  // Dio 인스턴스
-  late final Dio _dio;
-
   // API 키 캐싱
   String? _cachedApiKey;
   String? _cachedSecretKey;
-
-  // 생성자에서 Dio 초기화
-  AddressController() {
-    _dio = Dio(
-      BaseOptions(
-        responseType: ResponseType.json,
-        headers: {'Accept': 'application/json', 'Accept-Charset': 'utf-8'},
-      ),
-    );
-  }
+  String? _cachedClientId;
+  String? _cachedClientSecret;
 
   // API 키 초기화
   Future<bool> _initApiKeys() async {
@@ -32,6 +22,22 @@ class AddressController {
 
     if (_cachedApiKey == null || _cachedSecretKey == null) {
       print('네이버 API 키가 설정되지 않았습니다.');
+      return false;
+    }
+    return true;
+  }
+
+  // 로컬 검색용 API 키 초기화
+  Future<bool> _initLocalSearchApiKeys() async {
+    if (_cachedClientId != null && _cachedClientSecret != null) {
+      return true;
+    }
+
+    _cachedClientId = dotenv.env['NAVER_DEV_KEY'];
+    _cachedClientSecret = dotenv.env['NAVER_DEV_SECRET_KEY'];
+
+    if (_cachedClientId == null || _cachedClientSecret == null) {
+      print('네이버 로컬 검색 API 키가 설정되지 않았습니다.');
       return false;
     }
     return true;
@@ -50,18 +56,21 @@ class AddressController {
         'coords=${position.longitude},${position.latitude}&output=json';
 
     try {
-      final response = await _dio.get(
-        url,
-        options: Options(
-          headers: {
-            'X-NCP-APIGW-API-KEY-ID': _cachedApiKey!,
-            'X-NCP-APIGW-API-KEY': _cachedSecretKey!,
-          },
-        ),
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'X-NCP-APIGW-API-KEY-ID': _cachedApiKey!,
+          'X-NCP-APIGW-API-KEY': _cachedSecretKey!,
+          'Accept': 'application/json',
+        },
       );
 
+      // 응답 로깅 추가
+      print('역지오코딩 응답 코드: ${response.statusCode}');
+
       if (response.statusCode == 200) {
-        final data = response.data;
+        final responseBody = utf8.decode(response.bodyBytes); // UTF-8 디코딩
+        final data = json.decode(responseBody);
 
         // 디버깅: 전체 응답 로깅 (개발중에만 사용)
         print('API 응답: ${json.encode(data)}');
@@ -301,44 +310,82 @@ class AddressController {
     }
   }
 
-  // 주소 검색 기능 (키워드로 주소 찾기)
+  // 주소 검색 기능 - 로컬 검색 API 사용
   Future<List<Map<String, dynamic>>> searchAddressByKeyword(
     String keyword,
   ) async {
-    // API 키 확인
-    bool keysInitialized = await _initApiKeys();
+    // 로컬 검색 API 키 초기화
+    bool keysInitialized = await _initLocalSearchApiKeys();
     if (!keysInitialized) {
       return [];
     }
 
-    final url =
-        'https://naveropenapi.apigw.ntruss.com/map-geocode/v2/geocode?'
-        'query=${Uri.encodeComponent(keyword)}';
+    // 한글 인코딩 처리
+    final encodedKeyword = Uri.encodeComponent(keyword);
+    final url = Uri.parse(
+      'https://openapi.naver.com/v1/search/local.json?query=$encodedKeyword&display=5',
+    );
+
+    print('로컬 검색 API 호출: $url');
 
     try {
-      final response = await _dio.get(
+      final response = await http.get(
         url,
-        options: Options(
-          headers: {
-            'X-NCP-APIGW-API-KEY-ID': _cachedApiKey!,
-            'X-NCP-APIGW-API-KEY': _cachedSecretKey!,
-          },
-        ),
+        headers: {
+          'X-Naver-Client-Id': _cachedClientId!,
+          'X-Naver-Client-Secret': _cachedClientSecret!,
+        },
       );
 
-      if (response.statusCode == 200) {
-        final data = response.data;
+      print('로컬 검색 응답 코드: ${response.statusCode}');
 
-        if (data['addresses'] != null && data['addresses'].isNotEmpty) {
-          return List<Map<String, dynamic>>.from(data['addresses']);
+      if (response.statusCode == 200) {
+        final responseBody = utf8.decode(response.bodyBytes);
+        final data = json.decode(responseBody);
+
+        if (data['items'] != null && data['items'].isNotEmpty) {
+          print('로컬 검색 결과 수: ${data['items'].length}');
+
+          // 로컬 검색 결과를 지오코딩 API 형식으로 변환
+          return data['items'].map<Map<String, dynamic>>((item) {
+            // HTML 태그 제거
+            String title = item['title'].replaceAll(RegExp(r'<[^>]*>'), '');
+
+            return {
+              'roadAddress': item['roadAddress'] ?? '',
+              'jibunAddress': item['address'] ?? '',
+              'x': item['mapx'] ?? '0', // 경도
+              'y': item['mapy'] ?? '0', // 위도
+              'title': title,
+              'distance': 0,
+            };
+          }).toList();
+        } else {
+          print('검색 결과 없음: $keyword');
         }
+      } else {
+        print('로컬 검색 API 오류: ${response.statusCode} - ${response.body}');
       }
 
-      print('주소 검색 실패: ${response.statusCode}');
       return [];
     } catch (e) {
-      print('주소 검색 오류: $e');
+      print('로컬 검색 오류: $e');
       return [];
+    }
+  }
+
+  // mapx, mapy 좌표를 NLatLng로 변환
+  NLatLng convertMapCoordinatesToLatLng(String mapx, String mapy) {
+    try {
+      // 네이버 지도 API의 좌표는 경위도에 10^7을 곱한 값을 사용
+      double x = double.parse(mapx) / 10000000.0;
+      double y = double.parse(mapy) / 10000000.0;
+
+      return NLatLng(y, x); // NLatLng는 (위도, 경도) 순서
+    } catch (e) {
+      print('좌표 변환 오류: $e');
+      // 기본값으로 서울시청 좌표 반환
+      return NLatLng(37.5666805, 126.9784147);
     }
   }
 }

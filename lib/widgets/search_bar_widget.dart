@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:tomapto/search/search_transit.dart';
+import 'package:tomapto/search/search_main.dart';
+import 'package:tomapto/search/search_return.dart';
+import 'package:tomapto/controllers/search/search_main_controller.dart';
+import 'package:tomapto/pages/map/naver_map.dart'; // NaverMapPage import 추가
 
 class SearchBarWidget extends StatelessWidget {
   final String originPlace;
@@ -7,7 +10,7 @@ class SearchBarWidget extends StatelessWidget {
   final Function(String) onOriginChanged;
   final Function(String) onDestinationChanged;
   final VoidCallback onSwapLocations;
-  final VoidCallback onClosePressed;
+  final VoidCallback onClosePressed; // 이 콜백을 그대로 유지
 
   const SearchBarWidget({
     super.key,
@@ -16,7 +19,7 @@ class SearchBarWidget extends StatelessWidget {
     required this.onOriginChanged,
     required this.onDestinationChanged,
     required this.onSwapLocations,
-    required this.onClosePressed,
+    required this.onClosePressed, // 이 매개변수를 그대로 사용
   });
 
   @override
@@ -67,20 +70,49 @@ class SearchBarWidget extends StatelessWidget {
                         // 출발지 검색창
                         GestureDetector(
                           onTap: () async {
-                            // 출발지 검색 페이지로 이동
+                            // 출발지 검색 페이지로 이동 - 현재 출발지/도착지 정보 전달
+                            final initialSearchTerm =
+                                originPlace != '위치 확인 중...' &&
+                                        originPlace != '위치 권한 없음' &&
+                                        originPlace != '위치 확인 실패'
+                                    ? originPlace
+                                    : '';
+
                             final result = await Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder:
-                                    (context) => const SearchPage(
-                                      mode: SearchMode.origin,
+                                    (context) => SearchMainPage(
+                                      initialSearchTerm: initialSearchTerm,
+                                      currentOriginPlace: originPlace,
+                                      currentDestinationPlace: destinationPlace,
+                                      isSearchingOrigin: true, // 출발지 검색 모드
                                     ),
                               ),
                             );
 
-                            // 검색 결과가 있으면 출발지 업데이트
+                            // 검색 결과 처리
                             if (result != null) {
-                              onOriginChanged(result as String);
+                              // 맵 형태인 경우 (출발 또는 도착 버튼에서 넘어온 경우)
+                              if (result is Map) {
+                                String? type = result['type'];
+                                String? place = result['place'];
+
+                                if (type == 'origin' && place != null) {
+                                  onOriginChanged(place);
+                                } else if (type == 'destination' &&
+                                    place != null) {
+                                  onDestinationChanged(place);
+                                }
+                              }
+                              // SearchResult 객체인 경우 (검색 결과에서 직접 선택한 경우)
+                              else if (result is SearchResult) {
+                                onOriginChanged(result.name);
+                              }
+                              // 문자열인 경우
+                              else if (result is String) {
+                                onOriginChanged(result);
+                              }
                             }
                           },
                           child: Container(
@@ -118,20 +150,47 @@ class SearchBarWidget extends StatelessWidget {
                         // 목적지 검색창
                         GestureDetector(
                           onTap: () async {
-                            // 도착지 검색 페이지로 이동
+                            // 도착지 검색 페이지로 이동 - 현재 출발지/도착지 정보 전달
+                            final initialSearchTerm =
+                                destinationPlace != '도착지 입력'
+                                    ? destinationPlace
+                                    : '';
+
                             final result = await Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder:
-                                    (context) => const SearchPage(
-                                      mode: SearchMode.destination,
+                                    (context) => SearchMainPage(
+                                      initialSearchTerm: initialSearchTerm,
+                                      currentOriginPlace: originPlace,
+                                      currentDestinationPlace: destinationPlace,
+                                      isSearchingOrigin: false, // 도착지 검색 모드
                                     ),
                               ),
                             );
 
-                            // 검색 결과가 있으면 도착지 업데이트
+                            // 검색 결과 처리
                             if (result != null) {
-                              onDestinationChanged(result as String);
+                              // 맵 형태인 경우 (출발 또는 도착 버튼에서 넘어온 경우)
+                              if (result is Map) {
+                                String? type = result['type'];
+                                String? place = result['place'];
+
+                                if (type == 'origin' && place != null) {
+                                  onOriginChanged(place);
+                                } else if (type == 'destination' &&
+                                    place != null) {
+                                  onDestinationChanged(place);
+                                }
+                              }
+                              // SearchResult 객체인 경우 (검색 결과에서 직접 선택한 경우)
+                              else if (result is SearchResult) {
+                                onDestinationChanged(result.name);
+                              }
+                              // 문자열인 경우
+                              else if (result is String) {
+                                onDestinationChanged(result);
+                              }
                             }
                           },
                           child: Container(
@@ -177,6 +236,8 @@ class SearchBarWidget extends StatelessWidget {
                 right: -5,
                 child: IconButton(
                   icon: const Icon(Icons.close, color: Colors.white),
+                  // onClosePressed 콜백 그대로 사용
+                  // 이제 transit.dart에서 이 콜백은 NaverMapPage로 이동하는 로직을 가지고 있음
                   onPressed: onClosePressed,
                   iconSize: iconSize,
                 ),

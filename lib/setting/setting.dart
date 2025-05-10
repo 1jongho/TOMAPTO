@@ -51,11 +51,7 @@ class SettingsScreen extends StatelessWidget {
           icon: const Icon(Icons.arrow_back_ios, color: Colors.black, size: 20),
           onPressed: () {
             // 프로필 페이지로 돌아가기
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                builder: (context) => const ProfilePage(),
-              ),
-            );
+            Navigator.pop(context);
           },
         ),
       ),
@@ -138,8 +134,9 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildMenuItem(BuildContext context, {
-    required String title, 
+  Widget _buildMenuItem(
+    BuildContext context, {
+    required String title,
     required VoidCallback onTap,
     double bottomSpace = 0,
   }) {
@@ -156,10 +153,7 @@ class SettingsScreen extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: Colors.black87,
-                  ),
+                  style: const TextStyle(fontSize: 16, color: Colors.black87),
                 ),
                 const Icon(
                   Icons.arrow_forward_ios,
@@ -185,17 +179,11 @@ class SettingsScreen extends StatelessWidget {
             children: [
               const Text(
                 '버전',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.black87,
-                ),
+                style: TextStyle(fontSize: 16, color: Colors.black87),
               ),
               Text(
                 '현재 버전 0.0 / 최신 버전 0.0',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
             ],
           ),

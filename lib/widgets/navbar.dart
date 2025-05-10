@@ -160,7 +160,7 @@ class BottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const double navBarHeight = 88.0;
+    const double navBarHeight = 90;
     final double screenWidth = MediaQuery.of(context).size.width;
     final itemWidth = screenWidth / 4; // 네 개의 아이템으로 균등하게 분할
 

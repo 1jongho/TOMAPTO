@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:tomapto/widgets/navbar.dart';
 import 'package:tomapto/controllers/account/profile_controller.dart';
 import 'package:tomapto/pages/profile/login.dart';
+import 'package:tomapto/setting/setting.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -175,11 +176,19 @@ class _ProfilePageState extends State<ProfilePage> {
                               ),
                               IconButton(
                                 icon: Icon(
-                                  Icons.refresh,
+                                  Icons.settings,
                                   color: const Color(0xFF363636),
                                   size: 24 * (screenWidth / 375),
                                 ),
-                                onPressed: () => _refreshData(),
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder:
+                                          (context) => const SettingsScreen(),
+                                    ),
+                                  );
+                                },
                               ),
                             ],
                           ),

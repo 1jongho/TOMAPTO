@@ -82,10 +82,6 @@ class MapController {
         await moveCamera(position, 17); // 초기 줌 레벨은 17
         _firstLocationUpdate = false;
       }
-
-      // 위치 오버레이 위치 업데이트
-      _mapController!.getLocationOverlay().setPosition(position);
-
       // 위치 오버레이 표시 유지
       ensureLocationOverlayVisible();
     } catch (e) {
@@ -222,7 +218,7 @@ class MapController {
       _mapController!.getLocationOverlay().setPosition(position);
 
       // 위치 오버레이 표시 유지 (베어링 유지)
-      //ensureLocationOverlayVisible();
+      ensureLocationOverlayVisible();
     } catch (e) {
       print('현재 위치로 이동 실패: $e');
     }

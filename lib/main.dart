@@ -64,11 +64,86 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
+  @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(),
-      home: const NaverMapPage(),
+      theme: ThemeData(
+        scaffoldBackgroundColor: Colors.white,
+        colorScheme: ColorScheme.light(
+          surface: Colors.white,
+          secondary: Color(0xFF2196F3),
+        ),
+        splashColor: Colors.transparent,
+        splashFactory: NoSplash.splashFactory,
+        progressIndicatorTheme: ProgressIndicatorThemeData(
+          color: Color(0xFFFB233B),
+          circularTrackColor: Colors.grey.withOpacity(0.2),
+        ),
+
+        bottomSheetTheme: BottomSheetThemeData(
+          backgroundColor: Colors.white,
+          modalBackgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+        ),
+
+        dialogTheme: DialogTheme(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ButtonStyle(
+            backgroundColor: MaterialStateProperty.resolveWith<Color>((
+              Set<MaterialState> states,
+            ) {
+              if (states.contains(MaterialState.pressed)) {
+                return Color(0xFF388E3C);
+              }
+              return Color(0xFF4CAF50);
+            }),
+            foregroundColor: MaterialStateProperty.all<Color>(Colors.white),
+            overlayColor: MaterialStateProperty.resolveWith<Color>((
+              Set<MaterialState> states,
+            ) {
+              if (states.contains(MaterialState.pressed)) {
+                return Colors.green.withOpacity(0.1);
+              }
+              return Colors.transparent; // 투명으로 설정하여 보라색 효과 제거
+            }),
+            // 스플래시 팩토리 추가
+            splashFactory: NoSplash.splashFactory,
+          ),
+        ),
+
+        textButtonTheme: TextButtonThemeData(
+          style: ButtonStyle(
+            foregroundColor: MaterialStateProperty.resolveWith<Color>((
+              Set<MaterialState> states,
+            ) {
+              if (states.contains(MaterialState.pressed)) {
+                return Color(0xFF363636);
+              }
+              return Color(0xFF363636);
+            }),
+            // TextButton에도 스플래시 효과 제거
+            splashFactory: NoSplash.splashFactory,
+            overlayColor: MaterialStateProperty.resolveWith<Color>((
+              Set<MaterialState> states,
+            ) {
+              if (states.contains(MaterialState.pressed)) {
+                return Color(0xFF363636).withOpacity(0.3);
+              }
+              return Colors.transparent;
+            }),
+          ),
+        ),
+      ),
+      home: NaverMapPage(),
     );
   }
 }

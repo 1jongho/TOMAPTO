@@ -1,4 +1,5 @@
-// walk_modal.dart
+// walk_modal.dart 수정 내용 - 마커 표시 개선
+
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:tomapto/controllers/map/transit_map_controller.dart';
@@ -35,9 +36,8 @@ class _WalkModalState extends State<WalkModal> {
   int _estimatedTime = 0;
   int _totalDistance = 0;
 
-  final NLatLng _fixedDestination = NLatLng(37.5573946, 126.9560973);
-
-  final String _fixedDestinationName = '안양시 동안구';
+  // 출발지/도착지 좌표 저장
+  NLatLng? _destinationCoords;
 
   NPathOverlay? _routePathOverlay;
   NMarker? _startMarker;
@@ -51,9 +51,93 @@ class _WalkModalState extends State<WalkModal> {
     _isLoading = !widget.transitMapController.isWalkMapInitialized;
   }
 
+  @override
+  void didUpdateWidget(WalkModal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // 좌표나 주소가 변경된 경우 마커 및 경로 업데이트
+    if (oldWidget.initialPosition != widget.initialPosition ||
+        oldWidget.destinationPlace != widget.destinationPlace) {
+      if (widget.transitMapController.isWalkMapInitialized) {
+        // 기존 마커와 경로 제거
+        _clearRouteAndMarkers();
+
+        if (widget.initialPosition != null) {
+          // 출발지 마커 추가 (캡션 없이)
+          _addOriginMarker(widget.initialPosition!);
+        }
+
+        // 도착지가 설정된 경우에만 마커 추가 및 경로 검색
+        if (widget.destinationPlace != '도착지 입력') {
+          // didUpdateWidget에서는 좌표만 전달받고 경로 계산은 하지 않음
+          // transit.dart에서 이미 좌표 변환이 이루어졌을 것으로 가정
+          _routeHasBeenSearched = false;
+          Future.delayed(Duration(milliseconds: 300), () {
+            _searchAndDisplayRoute();
+          });
+        }
+      }
+    }
+  }
+
+  // 출발지 마커 추가 - 캡션 없이
+  void _addOriginMarker(NLatLng position) {
+    final controller = widget.transitMapController.walkMapController.controller;
+    if (controller == null) return;
+
+    // 기존 마커 제거
+    if (_startMarker != null) {
+      controller.deleteOverlay(_startMarker!.info);
+    }
+
+    // 새 마커 생성 (캡션 없음)
+    _startMarker = NMarker(id: 'walk_origin_marker', position: position);
+
+    // 마커 색상 설정
+    _startMarker!.setIconTintColor(const Color(0xFFFB233B));
+
+    controller.addOverlay(_startMarker!);
+  }
+
+  // 도착지 마커 추가 - 캡션 없이
+  void _addDestinationMarker(NLatLng position) {
+    final controller = widget.transitMapController.walkMapController.controller;
+    if (controller == null) return;
+
+    // 기존 마커 제거
+    if (_destinationMarker != null) {
+      controller.deleteOverlay(_destinationMarker!.info);
+    }
+
+    // 새 마커 생성 (캡션 없음)
+    _destinationMarker = NMarker(
+      id: 'walk_destination_marker',
+      position: position,
+    );
+
+    // 마커 색상 설정
+    _destinationMarker!.setIconTintColor(const Color.fromARGB(255, 90, 16, 34));
+
+    controller.addOverlay(_destinationMarker!);
+  }
+
   Future<void> _searchAndDisplayRoute() async {
     if (widget.initialPosition == null) {
       print('출발지 위치 정보가 없습니다.');
+      return;
+    }
+
+    if (widget.destinationPlace == '도착지 입력') {
+      return;
+    }
+
+    // transit.dart로부터 좌표 전달 받기
+    _destinationCoords =
+        widget.transitMapController.getCurrentDestinationPosition();
+
+    // 좌표가 없으면 경로 계산 불가
+    if (_destinationCoords == null) {
+      print('도착지 좌표가 없습니다. 경로를 계산할 수 없습니다.');
       return;
     }
 
@@ -64,7 +148,7 @@ class _WalkModalState extends State<WalkModal> {
     try {
       final routeData = await _routeController.searchWalkRoute(
         widget.initialPosition!,
-        _fixedDestination,
+        _destinationCoords!,
       );
 
       setState(() {
@@ -90,55 +174,24 @@ class _WalkModalState extends State<WalkModal> {
         return;
       }
 
-      final markers = widget.transitMapController.getMarkersByMode(
-        TransitMode.walk,
-      );
-      for (var marker in markers) {
-        controller.deleteOverlay(marker.info);
-      }
-      markers.clear();
-
       if (pathCoordinates.isNotEmpty) {
+        // 경로 생성 및 추가
         _routePathOverlay = RouteRenderer.createPathOverlay(
           'walk_route',
           pathCoordinates,
           color: Colors.blue,
           width: 6.0,
         );
-
-        _destinationMarker = RouteRenderer.createDestinationMarker(
-          _fixedDestination,
-          title: '도착',
-          animated: true,
-        );
-
-        widget.transitMapController.updateMarkers(
-          TransitMode.walk,
-          widget.initialPosition!,
-          '출발',
-        );
-
         controller.addOverlay(_routePathOverlay!);
-        controller.addOverlay(_destinationMarker!);
 
-        final minLat = pathCoordinates
-            .map((p) => p.latitude)
-            .reduce((a, b) => a < b ? a : b);
-        final minLng = pathCoordinates
-            .map((p) => p.longitude)
-            .reduce((a, b) => a < b ? a : b);
-        final maxLat = pathCoordinates
-            .map((p) => p.latitude)
-            .reduce((a, b) => a > b ? a : b);
-        final maxLng = pathCoordinates
-            .map((p) => p.longitude)
-            .reduce((a, b) => a > b ? a : b);
+        // 출발지 마커 추가 (캡션 없이)
+        _addOriginMarker(widget.initialPosition!);
 
-        final bounds = NLatLngBounds(
-          southWest: NLatLng(minLat, minLng),
-          northEast: NLatLng(maxLat, maxLng),
-        );
+        // 도착지 마커 추가 (캡션 없이)
+        _addDestinationMarker(_destinationCoords!);
 
+        // 경로가 모두 보이도록 카메라 이동
+        final bounds = _calculateBounds(pathCoordinates);
         controller.updateCamera(
           NCameraUpdate.fitBounds(bounds, padding: EdgeInsets.all(64)),
         );
@@ -155,12 +208,37 @@ class _WalkModalState extends State<WalkModal> {
     }
   }
 
+  // 좌표 목록의 경계 계산
+  NLatLngBounds _calculateBounds(List<NLatLng> coordinates) {
+    double minLat = double.infinity;
+    double maxLat = -double.infinity;
+    double minLng = double.infinity;
+    double maxLng = -double.infinity;
+
+    for (var coord in coordinates) {
+      if (coord.latitude < minLat) minLat = coord.latitude;
+      if (coord.latitude > maxLat) maxLat = coord.latitude;
+      if (coord.longitude < minLng) minLng = coord.longitude;
+      if (coord.longitude > maxLng) maxLng = coord.longitude;
+    }
+
+    return NLatLngBounds(
+      southWest: NLatLng(minLat, minLng),
+      northEast: NLatLng(maxLat, maxLng),
+    );
+  }
+
   void _clearRouteAndMarkers() {
     final controller = widget.transitMapController.walkMapController.controller;
     if (controller != null) {
       if (_routePathOverlay != null) {
         controller.deleteOverlay(_routePathOverlay!.info);
         _routePathOverlay = null;
+      }
+
+      if (_startMarker != null) {
+        controller.deleteOverlay(_startMarker!.info);
+        _startMarker = null;
       }
 
       if (_destinationMarker != null) {
@@ -179,7 +257,7 @@ class _WalkModalState extends State<WalkModal> {
   }
 
   void _startNavigation() {
-    if (!_hasRoute) return;
+    if (!_hasRoute || _destinationCoords == null) return;
 
     Navigator.push(
       context,
@@ -188,9 +266,9 @@ class _WalkModalState extends State<WalkModal> {
             (context) => NavigationPage(
               mode: TransitMode.walk,
               origin: widget.initialPosition!,
-              destination: _fixedDestination,
+              destination: _destinationCoords!,
               originName: widget.originPlace,
-              destinationName: _fixedDestinationName,
+              destinationName: widget.destinationPlace,
             ),
       ),
     );
@@ -227,22 +305,22 @@ class _WalkModalState extends State<WalkModal> {
                 true,
               );
             });
-            if (widget.initialPosition != null) {
-              widget.transitMapController.updateMarkers(
-                TransitMode.walk,
-                widget.initialPosition!,
-                widget.originPlace,
-              );
 
-              widget.transitMapController.moveCamera(
-                TransitMode.walk,
-                widget.initialPosition!,
-                widget.transitMapController.getDefaultZoomLevel(
-                  TransitMode.walk,
+            if (widget.initialPosition != null) {
+              // 출발지 마커 추가 (캡션 없이)
+              _addOriginMarker(widget.initialPosition!);
+
+              // 카메라 이동
+              controller.updateCamera(
+                NCameraUpdate.withParams(
+                  target: widget.initialPosition!,
+                  zoom: 15,
                 ),
               );
 
-              if (!_routeHasBeenSearched) {
+              // 도착지가 설정된 경우 경로 검색
+              if (!_routeHasBeenSearched &&
+                  widget.destinationPlace != '도착지 입력') {
                 _routeHasBeenSearched = true;
                 Future.delayed(Duration(milliseconds: 500), () {
                   _searchAndDisplayRoute();
@@ -260,13 +338,13 @@ class _WalkModalState extends State<WalkModal> {
                       double zoom = cameraPosition.zoom;
                       widget.transitMapController.walkMapController
                           .setZoomLevel(zoom);
-                      print('도보 탭 줌 레벨 업데이트됨: $zoom');
                     }
                   });
             }
           },
           onMapTapped: (point, latLng) {
-            print('도보 지도가 탭되었습니다: $latLng');
+            // 지도 터치 이벤트를 전달하지만, transit.dart에서 처리하지 않음
+            widget.onLocationUpdated(latLng);
           },
         ),
 
@@ -371,7 +449,7 @@ class _WalkModalState extends State<WalkModal> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          _fixedDestinationName,
+                          widget.destinationPlace,
                           style: const TextStyle(fontSize: 14),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -445,15 +523,6 @@ class _WalkModalState extends State<WalkModal> {
                               ],
                             ),
                           ],
-                        ),
-
-                        const SizedBox(height: 12),
-                        Text(
-                          '소모 칼로리: 약 ${(_totalDistance * 0.05).toInt()}kcal',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[800],
-                          ),
                         ),
                       ],
                     ),

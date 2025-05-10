@@ -78,7 +78,7 @@ class RouteController {
 
     try {
       // 실제로는 네이버 경로 검색 API 호출 필요
-      // 여기서는 예시 코드만 작성
+      // 여기서는 예시 코드만
       /*
       final url = Uri.parse(
         'https://naveropenapi.apigw.ntruss.com/map-direction/v1/transit?'
@@ -95,7 +95,7 @@ class RouteController {
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        // 응답 파싱 로직 필요
+        // 응답 파싱 로직
       }
       */
 
@@ -183,14 +183,25 @@ class RouteController {
             }
           }
 
+          // 디버깅을 위해 상세 정보 출력
+          print('경로 요약 정보: ${route['summary']}');
+
           _cachedCarRoute = {
             'routes': [
               {'path': pathCoordinates, 'summary': route['summary']},
             ],
             'distance': route['summary']?['distance'] ?? 0,
-            'duration': route['summary']?['duration'] ?? 0,
+            'duration':
+                (route['summary']?['duration'] ?? 0) ~/ 1000, // 밀리초를 초로 변환
             'toll': route['summary']?['tollFare'] ?? 0,
           };
+
+          // 디버깅 로그 추가
+          print('API 응답 - 자동차 경로 데이터: $_cachedCarRoute');
+          print('예상 시간(초): ${_cachedCarRoute!['duration']}');
+          print('총 거리(미터): ${_cachedCarRoute!['distance']}');
+          print('통행료(원): ${_cachedCarRoute!['toll']}');
+
           return _cachedCarRoute!;
         }
       }
@@ -220,12 +231,11 @@ class RouteController {
     }
 
     try {
+      // driving 대신 pedestrian API 사용
       final url = Uri.parse(
-        // 'pedestrian' 대신 'driving'으로 시도해보세요
-        '$_cachedApiUrl/driving?'
+        '$_cachedApiUrl/pedestrian?'
         'start=${start.longitude},${start.latitude}&'
-        'goal=${end.longitude},${end.latitude}&'
-        'option=optimal', // option도 추가해보세요
+        'goal=${end.longitude},${end.latitude}',
       );
 
       final response = await http.get(
@@ -236,45 +246,26 @@ class RouteController {
         },
       );
 
-      // searchWalkRoute 메서드에서
+      print('도보 경로 응답 상태 코드: ${response.statusCode}');
+      print('도보 경로 응답 내용: ${response.body}');
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
 
-        // 응답 구조 확인
-        print('응답 구조: ${data['route']?.keys}');
+        // 보행자 API는 응답 구조가 다름
+        if (data['route'] != null && data['route']['pedestrian'] != null) {
+          final route = data['route']['pedestrian'][0];
 
-        // traoptimal을 체크하도록 수정
-        if (data['route'] != null) {
-          Map<String, dynamic>? route;
+          // 경로 좌표 추출
+          final List<NLatLng> pathCoordinates = [];
+          if (route['path'] != null) {
+            final path = route['path'] as List;
+            print('path 길이: ${path.length}');
 
-          // 우선순위: trafast > traoptimal
-          if (data['route']['trafast'] != null) {
-            route = data['route']['trafast'][0];
-            print('trafast 경로 사용');
-          } else if (data['route']['traoptimal'] != null) {
-            route = data['route']['traoptimal'][0];
-            print('traoptimal 경로 사용');
-          }
-
-          if (route != null) {
-            // 경로 좌표 추출 (이전과 동일한 로직)
-            final List<NLatLng> pathCoordinates = [];
-            if (route['path'] != null) {
-              final path = route['path'] as List;
-              print('path 길이: ${path.length}');
-              print('첫 번째 path 요소: ${path[0]}');
-
-              if (path.isNotEmpty && path[0] is! List) {
-                // 1차원 배열인 경우
-                for (int i = 0; i < path.length; i += 2) {
-                  if (i + 1 < path.length) {
-                    double longitude = (path[i] as num).toDouble();
-                    double latitude = (path[i + 1] as num).toDouble();
-                    pathCoordinates.add(NLatLng(latitude, longitude));
-                  }
-                }
-              } else {
-                // 2차원 배열인 경우
+            if (path.isNotEmpty) {
+              // 네이버 보행자 API path 구조 확인
+              if (path[0] is List) {
+                // 2차원 배열인 경우 [longitude, latitude] 형태
                 for (var point in path) {
                   if (point is List && point.length >= 2) {
                     double longitude = (point[0] as num).toDouble();
@@ -282,21 +273,40 @@ class RouteController {
                     pathCoordinates.add(NLatLng(latitude, longitude));
                   }
                 }
+              } else {
+                // 1차원 배열인 경우 (경도, 위도가 번갈아 나오는 형태)
+                for (int i = 0; i < path.length; i += 2) {
+                  if (i + 1 < path.length) {
+                    double longitude = (path[i] as num).toDouble();
+                    double latitude = (path[i + 1] as num).toDouble();
+                    pathCoordinates.add(NLatLng(latitude, longitude));
+                  }
+                }
               }
             }
-
-            _cachedWalkRoute = {
-              'routes': [
-                {'path': pathCoordinates, 'summary': route['summary']},
-              ],
-              'distance': route['summary']?['distance'] ?? 0,
-              'duration': route['summary']?['duration'] ?? 0,
-            };
-            return _cachedWalkRoute!;
           }
+
+          // 도보 경로 요약 정보 확인
+          print('도보 경로 요약 정보: ${route['summary']}');
+
+          // 도보 경로 결과 저장
+          _cachedWalkRoute = {
+            'routes': [
+              {'path': pathCoordinates, 'summary': route['summary']},
+            ],
+            'distance': route['summary']?['distance'] ?? 0,
+            'duration': route['summary']?['duration'] ?? 0,
+          };
+
+          // 디버깅 로그 추가
+          print('API 응답 - 도보 경로 데이터: $_cachedWalkRoute');
+          print('예상 시간(초): ${_cachedWalkRoute!['duration']}');
+          print('총 거리(미터): ${_cachedWalkRoute!['distance']}');
+
+          return _cachedWalkRoute!;
         }
 
-        print('예상된 경로 타입을 찾을 수 없음');
+        print('보행자 경로를 찾을 수 없음');
         return _getMockWalkRouteData(start, end);
       }
 

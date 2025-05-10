@@ -1,3 +1,5 @@
+// transit_map_controller.dart 수정 내용
+
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:tomapto/controllers/map/map_controller.dart';
@@ -17,8 +19,9 @@ class TransitMapController {
   bool _isCarMapInitialized = false;
   bool _isWalkMapInitialized = false;
 
-  // 현재 위치
+  // 출발지와 도착지 좌표 저장
   NLatLng? _currentPosition;
+  NLatLng? _destinationPosition;
 
   // Getters
   MapController get carMapController => _carMapController;
@@ -47,14 +50,24 @@ class TransitMapController {
     return mode == TransitMode.car ? _carMarkers : _walkMarkers;
   }
 
-  // 현재 위치 설정
+  // 현재 위치(출발지) 설정
   void setCurrentPosition(NLatLng position) {
     _currentPosition = position;
   }
 
-  // 현재 위치 반환
+  // 현재 위치(출발지) 반환
   NLatLng? getCurrentPosition() {
     return _currentPosition;
+  }
+
+  // 도착지 위치 설정
+  void setDestinationPosition(NLatLng? position) {
+    _destinationPosition = position;
+  }
+
+  // 도착지 위치 반환
+  NLatLng? getCurrentDestinationPosition() {
+    return _destinationPosition;
   }
 
   // 모드에 따른 기본 줌 레벨 반환
@@ -88,7 +101,7 @@ class TransitMapController {
         markers.clear();
       }
 
-      // 새 마커 생성
+      // 새 마커 생성 - 캡션 없음
       final marker = NMarker(
         id: '출발지_${mode == TransitMode.car ? '자동차' : '도보'}',
         position: position,
@@ -101,37 +114,31 @@ class TransitMapController {
       try {
         controller.addMarker(marker);
         markers.add(marker);
-        print('마커 추가 성공 - ${mode == TransitMode.car ? '자동차' : '도보'} 모드');
       } catch (e) {
         print('마커 추가 실패: $e');
       }
     }
   }
 
-  // 경로 계산 (이 메서드는 실제 구현 시 별도의 서비스를 호출해야 함)
-  Future<Map<String, dynamic>> calculateRoute(
-    TransitMode mode,
-    NLatLng start,
-    NLatLng end,
-  ) async {
-    // 실제 구현에서는 네이버 경로 API를 호출해야 함
-    // 여기서는 예시 응답만 반환
+  // 모든 마커와 경로 제거 (새로운 메서드)
+  void clearMarkersAndRoutes(TransitMode mode) {
+    final controller = getControllerByMode(mode);
+    final markers = getMarkersByMode(mode);
 
-    // 시뮬레이션된 딜레이
-    await Future.delayed(const Duration(seconds: 1));
+    if (controller.controller != null) {
+      // 모든 마커 제거
+      controller.removeAllMarkers(markers);
+      markers.clear();
+    }
+  }
 
-    return {
-      'distance': 1500, // 미터 단위
-      'duration': 300, // 초 단위
-      'type': mode == TransitMode.car ? 'driving' : 'walking',
-      'route': [
-        // 여기에 실제 경로 좌표가 들어갈 것
-        start,
-        NLatLng(start.latitude + 0.01, start.longitude),
-        NLatLng(start.latitude + 0.02, start.longitude + 0.01),
-        end,
-      ],
-    };
+  // 모든 맵 컨트롤러의 모든 마커와 경로 제거 (새로 추가된 메서드)
+  void clearAllMarkersAndRoutes() {
+    // 자동차 모드 마커 및 경로 제거
+    clearMarkersAndRoutes(TransitMode.car);
+
+    // 도보 모드 마커 및 경로 제거
+    clearMarkersAndRoutes(TransitMode.walk);
   }
 
   // 리소스 해제
