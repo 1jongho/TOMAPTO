@@ -15,7 +15,7 @@ class SignupConstants {
     'password': 'assets/icons/password_tooltip.svg',
     'password_confirm': 'assets/icons/password_confirm_tooltip.svg',
     'email': 'assets/icons/email_tooltip.svg',
-    'name': 'assets/icons/name_tooltip.svg', // 이름 툴팁 추가
+    'name': 'assets/icons/name_tooltip.svg',
   };
 
   // 이메일 도메인 리스트
@@ -26,32 +26,157 @@ class SignupConstants {
     '@hanmail.net',
   ];
 
-  // API 응답 메시지
-  static const String signupSuccess = '회원가입이 완료되었습니다.';
-  static const String signupError = '회원가입 중 오류가 발생했습니다.';
-  static const String serverError = '서버 오류가 발생했습니다.';
-  static const String verificationSent = '인증번호가 이메일로 발송되었습니다.';
-  static const String verificationSuccess = '이메일 인증이 완료되었습니다.';
-  static const String verificationFailed = '인증번호가 일치하지 않습니다.';
-  static const String verificationExpired = '인증번호가 만료되었습니다. 다시 요청해주세요.';
+  // 클라이언트 검증 규칙
+  static const int minNameLength = 2;
+  static const int maxNameLength = 20;
+  static const int minIdLength = 4;
+  static const int maxIdLength = 20;
+  static const int minNicknameLength = 2;
+  static const int maxNicknameLength = 15;
+  static const int minPasswordLength = 8;
 }
 
-// API 서비스 클래스 - API 통신 로직 분리
+// 클라이언트 사이드 검증 유틸리티
+class ClientValidator {
+  // 이름 검증 (즉시)
+  static ValidationResult validateName(String? value) {
+    if (value == null || value.isEmpty) {
+      return ValidationResult(isValid: false, message: '이름을 입력해주세요.');
+    }
+    if (value.length < SignupConstants.minNameLength) {
+      return ValidationResult(
+        isValid: false,
+        message: '이름은 ${SignupConstants.minNameLength}자 이상이어야 합니다.',
+      );
+    }
+    if (value.length > SignupConstants.maxNameLength) {
+      return ValidationResult(
+        isValid: false,
+        message: '이름은 ${SignupConstants.maxNameLength}자 이하여야 합니다.',
+      );
+    }
+    if (!RegExp(r'^[가-힣]+$').hasMatch(value)) {
+      return ValidationResult(isValid: false, message: '이름은 한글만 입력 가능합니다.');
+    }
+    return ValidationResult(isValid: true);
+  }
+
+  // 아이디 형식 검증 (즉시)
+  static ValidationResult validateIdFormat(String? value) {
+    if (value == null || value.isEmpty) {
+      return ValidationResult(isValid: false, message: '아이디를 입력해주세요.');
+    }
+    if (value.length < SignupConstants.minIdLength) {
+      return ValidationResult(
+        isValid: false,
+        message: '아이디는 ${SignupConstants.minIdLength}자 이상이어야 합니다.',
+      );
+    }
+    if (value.length > SignupConstants.maxIdLength) {
+      return ValidationResult(
+        isValid: false,
+        message: '아이디는 ${SignupConstants.maxIdLength}자 이하여야 합니다.',
+      );
+    }
+    if (!RegExp(r'^[a-zA-Z0-9]+$').hasMatch(value)) {
+      return ValidationResult(
+        isValid: false,
+        message: '아이디는 영문, 숫자만 입력 가능합니다.',
+      );
+    }
+    if (!RegExp(r'^[a-zA-Z]').hasMatch(value)) {
+      return ValidationResult(isValid: false, message: '아이디는 영문으로 시작해야 합니다.');
+    }
+    return ValidationResult(isValid: true);
+  }
+
+  // 닉네임 형식 검증 (즉시)
+  static ValidationResult validateNicknameFormat(String? value) {
+    if (value == null || value.isEmpty) {
+      return ValidationResult(isValid: false, message: '닉네임을 입력해주세요.');
+    }
+    if (value.length < SignupConstants.minNicknameLength) {
+      return ValidationResult(
+        isValid: false,
+        message: '닉네임은 ${SignupConstants.minNicknameLength}자 이상이어야 합니다.',
+      );
+    }
+    if (value.length > SignupConstants.maxNicknameLength) {
+      return ValidationResult(
+        isValid: false,
+        message: '닉네임은 ${SignupConstants.maxNicknameLength}자 이하여야 합니다.',
+      );
+    }
+    if (!RegExp(r'^[가-힣a-zA-Z0-9]+$').hasMatch(value)) {
+      return ValidationResult(
+        isValid: false,
+        message: '닉네임은 한글, 영문, 숫자만 입력 가능합니다.',
+      );
+    }
+    return ValidationResult(isValid: true);
+  }
+
+  // 비밀번호 검증 (즉시)
+  static ValidationResult validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return ValidationResult(isValid: false, message: '비밀번호를 입력해주세요.');
+    }
+    if (value.length < SignupConstants.minPasswordLength) {
+      return ValidationResult(
+        isValid: false,
+        message: '비밀번호는 ${SignupConstants.minPasswordLength}자 이상이어야 합니다.',
+      );
+    }
+    if (!RegExp(r'^(?=.*[a-zA-Z])(?=.*\d)').hasMatch(value)) {
+      return ValidationResult(
+        isValid: false,
+        message: '비밀번호는 영문과 숫자를 포함해야 합니다.',
+      );
+    }
+    if (value.contains(' ')) {
+      return ValidationResult(
+        isValid: false,
+        message: '비밀번호에는 공백을 포함할 수 없습니다.',
+      );
+    }
+    return ValidationResult(isValid: true);
+  }
+
+  // 이메일 형식 검증 (즉시)
+  static ValidationResult validateEmailFormat(String? value) {
+    if (value == null || value.isEmpty) {
+      return ValidationResult(isValid: false, message: '이메일을 입력해주세요.');
+    }
+    if (!RegExp(r'^[a-zA-Z0-9._%+-]+$').hasMatch(value)) {
+      return ValidationResult(isValid: false, message: '올바른 이메일 형식이 아닙니다.');
+    }
+    return ValidationResult(isValid: true);
+  }
+}
+
+// 검증 결과 클래스
+class ValidationResult {
+  final bool isValid;
+  final String? message;
+
+  ValidationResult({required this.isValid, this.message});
+}
+
+// API 서비스 클래스 - 서버 통신만 담당
 class SignupApiService {
-  // API 기본 URL 가져오기
   static String getApiBaseUrl() {
     String baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:8080/api';
-    // Android 플랫폼이면서 URL이 localhost를 포함하는 경우
     if (Platform.isAndroid && baseUrl.contains('localhost')) {
-      // 에뮬레이터에서는 10.0.2.2로 localhost 대체
       return baseUrl.replaceAll('localhost', '10.0.2.2');
     }
-    // 다른 플랫폼이거나 이미 localhost가 아닌 경우 원래 URL 반환
     return baseUrl;
   }
 
-  // 중복 확인 API 호출
-  static Future<bool> checkDuplicate(String field, String value) async {
+  // 중복 확인 API 호출 (서버 검증)
+  static Future<Map<String, dynamic>> checkDuplicate(
+    String field,
+    String value,
+  ) async {
     try {
       final apiBaseUrl = getApiBaseUrl();
       final encodedValue = Uri.encodeComponent(value);
@@ -64,12 +189,12 @@ class SignupApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['isDuplicate'] ?? false;
+        return {'success': true, 'isDuplicate': data['isDuplicate'] ?? false};
       }
-      return false;
+      return {'success': false, 'isDuplicate': false};
     } catch (e) {
       print('중복 확인 오류: $e');
-      return false;
+      return {'success': false, 'isDuplicate': false};
     }
   }
 
@@ -86,17 +211,17 @@ class SignupApiService {
       );
 
       if (response.statusCode == 201) {
-        return {'success': true, 'message': SignupConstants.signupSuccess};
+        return {'success': true, 'message': '회원가입이 완료되었습니다.'};
       } else {
         final errorData = jsonDecode(response.body);
         return {
           'success': false,
-          'message': errorData['message'] ?? SignupConstants.signupError,
+          'message': errorData['message'] ?? '회원가입 중 오류가 발생했습니다.',
         };
       }
     } catch (e) {
       print('회원가입 오류: $e');
-      return {'success': false, 'message': SignupConstants.signupError};
+      return {'success': false, 'message': '회원가입 중 오류가 발생했습니다.'};
     }
   }
 
@@ -113,7 +238,7 @@ class SignupApiService {
       );
 
       if (response.statusCode == 200) {
-        return {'success': true, 'message': SignupConstants.verificationSent};
+        return {'success': true, 'message': '인증번호가 이메일로 발송되었습니다.'};
       } else {
         final errorData = jsonDecode(response.body);
         return {
@@ -144,124 +269,33 @@ class SignupApiService {
         final data = jsonDecode(response.body);
         return {
           'success': data['verified'] ?? false,
+          'verified': data['verified'] ?? false,
           'message':
-              data['verified'] == true
-                  ? SignupConstants.verificationSuccess
-                  : SignupConstants.verificationFailed,
+              data['message'] ??
+              (data['verified'] == true
+                  ? '이메일 인증이 완료되었습니다.'
+                  : '인증번호가 일치하지 않습니다.'),
         };
       } else {
         final errorData = jsonDecode(response.body);
         return {
           'success': false,
-          'message': errorData['message'] ?? SignupConstants.verificationFailed,
+          'verified': false,
+          'message': errorData['message'] ?? '인증번호가 일치하지 않습니다.',
         };
       }
     } catch (e) {
       print('이메일 인증 확인 오류: $e');
-      return {'success': false, 'message': '서버 연결에 실패했습니다.'};
-    }
-  }
-
-  // 이메일 인증 상태 확인 API 호출
-  static Future<Map<String, dynamic>> checkEmailVerification(
-    String email,
-  ) async {
-    try {
-      final apiBaseUrl = getApiBaseUrl();
-      final encodedEmail = Uri.encodeComponent(email);
-      final response = await http.get(
-        Uri.parse(
-          '$apiBaseUrl/account/verification/check-verification?email=$encodedEmail',
-        ),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {'success': true, 'verified': data['verified'] ?? false};
-      } else {
-        return {'success': false, 'verified': false};
-      }
-    } catch (e) {
-      print('이메일 인증 상태 확인 오류: $e');
-      return {'success': false, 'verified': false};
+      return {'success': false, 'verified': false, 'message': '서버 연결에 실패했습니다.'};
     }
   }
 }
 
-// 입력 검증 클래스 - 새로 추가된 부분
-class InputValidator {
-  // 이름 검증 - 한국어만 허용
-  static bool isValidName(String name) {
-    if (name.isEmpty) return false;
-
-    // 한국어 완성형 글자만 허용 (자음, 모음 초성 제외)
-    // 한글 유니코드 범위: 가(0xAC00) ~ 힣(0xD7A3)
-    final koreanPattern = RegExp(r'^[가-힣]+$');
-    return koreanPattern.hasMatch(name);
-  }
-
-  // 아이디 검증 - 영어와 숫자만, 4~16자
-  static bool isValidId(String id) {
-    if (id.isEmpty) return false;
-    if (id.length < 4 || id.length > 16) return false;
-
-    // 영어와 숫자만 허용
-    final idPattern = RegExp(r'^[a-zA-Z0-9]+$');
-    return idPattern.hasMatch(id);
-  }
-
-  // 닉네임 검증 - 한국어, 영어, 숫자만 허용, 최대 16자
-  static bool isValidNickname(String nickname) {
-    if (nickname.isEmpty) return false;
-    if (nickname.length > 16) return false;
-
-    // 한국어 완성형, 영어, 숫자만 허용
-    final nicknamePattern = RegExp(r'^[가-힣a-zA-Z0-9]+$');
-    return nicknamePattern.hasMatch(nickname);
-  }
-
-  // 에러 메시지 반환
-  static String? getNameErrorMessage(String name) {
-    if (name.isEmpty) return null;
-    if (!isValidName(name)) {
-      return '이름은 한국어만 입력 가능합니다.';
-    }
-    return null;
-  }
-
-  static String? getIdErrorMessage(String id) {
-    if (id.isEmpty) return null;
-    if (id.length < 4) {
-      return '아이디는 4자 이상이어야 합니다.';
-    }
-    if (id.length > 16) {
-      return '아이디는 16자 이하여야 합니다.';
-    }
-    if (!isValidId(id)) {
-      return '아이디는 영어와 숫자만 입력 가능합니다.';
-    }
-    return null;
-  }
-
-  static String? getNicknameErrorMessage(String nickname) {
-    if (nickname.isEmpty) return null;
-    if (nickname.length > 16) {
-      return '닉네임은 16자 이하여야 합니다.';
-    }
-    if (!isValidNickname(nickname)) {
-      return '닉네임은 한국어, 영어, 숫자만 입력 가능합니다.';
-    }
-    return null;
-  }
-}
-
-// 툴팁 관리 클래스 - 툴팁 관련 로직 분리
+// 툴팁 관리 클래스
 class TooltipManager {
   OverlayEntry? _currentTooltip;
   String? _currentTooltipType;
 
-  // 툴팁 표시
   void showTooltip(BuildContext context, FocusNode node, String tooltipType) {
     removeTooltip();
 
@@ -274,11 +308,9 @@ class TooltipManager {
         SignupConstants.tooltipImages[tooltipType] ??
         'assets/icons/error_circle.svg';
 
-    // 위치 계산
     double left = fieldPosition.dx + fieldSize.width - 135;
     double top = fieldPosition.dy + fieldSize.height + 3;
 
-    // 이메일 필드에 대한 특별 처리
     if (tooltipType == 'email') {
       left = fieldPosition.dx + fieldSize.width + 18;
     }
@@ -318,7 +350,6 @@ class TooltipManager {
     overlay.insert(_currentTooltip!);
   }
 
-  // 툴팁 제거
   void removeTooltip() {
     if (_currentTooltip != null) {
       _currentTooltip!.remove();
@@ -327,422 +358,254 @@ class TooltipManager {
     }
   }
 
-  // 정리
   void dispose() {
     removeTooltip();
   }
 }
 
-// 회원가입 컨트롤러 - 핵심 로직만 포함
+// 하이브리드 회원가입 컨트롤러 (클라이언트 + 서버 검증)
 class SignupController {
-  // Context
   final BuildContext context;
-
-  // Controller & Focus Nodes
   final Map<String, TextEditingController> controllers;
   final Map<String, FocusNode> focusNodes;
-
-  // Scroll controller
   final ScrollController scrollController;
-
-  // Function to update the UI
   final Function(VoidCallback) updateUI;
 
-  // State variables
+  // UI 상태
   String _selectedDomain = SignupConstants.domains[0];
+
+  // 클라이언트 검증 상태 (즉시)
+  ValidationResult _nameValidation = ValidationResult(isValid: true);
+  ValidationResult _idFormatValidation = ValidationResult(isValid: true);
+  ValidationResult _nicknameFormatValidation = ValidationResult(isValid: true);
+  ValidationResult _passwordValidation = ValidationResult(isValid: true);
+  ValidationResult _emailFormatValidation = ValidationResult(isValid: true);
+
+  // 서버 검증 상태 (디바운스)
   bool _isIdDuplicate = false;
   bool _isNicknameDuplicate = false;
   bool _isEmailDuplicate = false;
-  bool _isEmailValid = true;
+  bool _isCheckingDuplicate = false;
 
-  // 입력 양식 검증 상태 변수 - 새로 추가된 부분
-  bool _isNameValid = true;
-  bool _isIdFormatValid = true;
-  bool _isNicknameFormatValid = true;
-  String? _nameErrorMessage;
-  String? _idErrorMessage;
-  String? _nicknameErrorMessage;
-
-  // 이메일 인증 관련 상태 변수
+  // 이메일 인증 상태
   bool _isVerificationSent = false;
   bool _isEmailVerified = false;
-  String _verificationError = '';
-  int _verificationTimeLeft = 0; // 초 단위 남은 시간
+  int _verificationTimeLeft = 0;
   Timer? _verificationTimer;
 
-  // Debounce timers
+  // 디바운스 타이머
   Timer? _idDebounceTimer;
   Timer? _nicknameDebounceTimer;
   Timer? _emailDebounceTimer;
-  Timer? _nameDebounceTimer; // 이름 디바운스 타이머 추가
 
-  // Tooltip manager
   final TooltipManager _tooltipManager = TooltipManager();
 
-  // Getters
-  bool get isIdDuplicate => _isIdDuplicate;
-  bool get isNicknameDuplicate => _isNicknameDuplicate;
-  bool get isEmailDuplicate => _isEmailDuplicate;
-  bool get isEmailValid => _isEmailValid;
-  String get selectedDomain => _selectedDomain;
-  List<String> get domains => SignupConstants.domains;
-
-  // 새로운 getter들 - 입력 양식 검증용
-  bool get isNameValid => _isNameValid;
-  bool get isIdFormatValid => _isIdFormatValid;
-  bool get isNicknameFormatValid => _isNicknameFormatValid;
-  String? get nameErrorMessage => _nameErrorMessage;
-  String? get idErrorMessage => _idErrorMessage;
-  String? get nicknameErrorMessage => _nicknameErrorMessage;
-
-  // 이메일 인증 관련 getter
-  bool get isVerificationSent => _isVerificationSent;
-  bool get isEmailVerified => _isEmailVerified;
-  String get verificationError => _verificationError;
-  int get verificationTimeLeft => _verificationTimeLeft;
-
-  // Constructor
   SignupController({
     required this.context,
     required this.controllers,
     required this.focusNodes,
     required this.scrollController,
     required this.updateUI,
-  }) {
-    // 이벤트 리스너 설정
-    _setupEventListeners();
+  });
 
-    // 인증번호 컨트롤러 초기화
-    if (!controllers.containsKey('verificationCode')) {
-      controllers['verificationCode'] = TextEditingController();
+  // Getters - 클라이언트 검증
+  ValidationResult get nameValidation => _nameValidation;
+  ValidationResult get idFormatValidation => _idFormatValidation;
+  ValidationResult get nicknameFormatValidation => _nicknameFormatValidation;
+  ValidationResult get passwordValidation => _passwordValidation;
+  ValidationResult get emailFormatValidation => _emailFormatValidation;
+
+  // Getters - 서버 검증
+  bool get isIdDuplicate => _isIdDuplicate;
+  bool get isNicknameDuplicate => _isNicknameDuplicate;
+  bool get isEmailDuplicate => _isEmailDuplicate;
+  bool get isCheckingDuplicate => _isCheckingDuplicate;
+
+  // Getters - 기타
+  String get selectedDomain => _selectedDomain;
+  List<String> get domains => SignupConstants.domains;
+  bool get isVerificationSent => _isVerificationSent;
+  bool get isEmailVerified => _isEmailVerified;
+  int get verificationTimeLeft => _verificationTimeLeft;
+
+  // 전체 유효성 상태
+  bool get isNameValid => _nameValidation.isValid;
+  bool get isIdValid => _idFormatValidation.isValid && !_isIdDuplicate;
+  bool get isNicknameValid =>
+      _nicknameFormatValidation.isValid && !_isNicknameDuplicate;
+  bool get isEmailValid => _emailFormatValidation.isValid && !_isEmailDuplicate;
+  bool get isPasswordValid => _passwordValidation.isValid;
+
+  // 도메인 선택
+  void setSelectedDomain(String domain) {
+    updateUI(() {
+      _selectedDomain = domain;
+    });
+
+    // 이메일이 입력되어 있다면 중복 확인
+    if (controllers['email']!.text.isNotEmpty) {
+      validateEmailAndCheckDuplicate(controllers['email']!.text);
     }
   }
 
-  // 이벤트 리스너 설정 - 이름 필드 추가
-  void _setupEventListeners() {
-    focusNodes['id']?.addListener(() => onFocusChange('id'));
-    focusNodes['nickname']?.addListener(() => onFocusChange('nickname'));
-    focusNodes['email']?.addListener(() => onFocusChange('email'));
-
-    controllers['name']?.addListener(() => onTextChange('name')); // 이름 리스너 추가
-    controllers['id']?.addListener(() => onTextChange('id'));
-    controllers['nickname']?.addListener(() => onTextChange('nickname'));
-    controllers['email']?.addListener(() => onTextChange('email'));
-
-    scrollController.addListener(onScroll);
+  // 이름 검증 (즉시)
+  void validateName(String value) {
+    updateUI(() {
+      _nameValidation = ClientValidator.validateName(value);
+    });
   }
 
-  // 포커스 변경 이벤트 통합 처리
-  void onFocusChange(String field) {
-    final focusNode = focusNodes[field];
-    final controller = controllers[field];
+  // 아이디 검증 (즉시 형식 + 디바운스 중복)
+  void validateIdAndCheckDuplicate(String value) {
+    // 1. 즉시 형식 검증
+    updateUI(() {
+      _idFormatValidation = ClientValidator.validateIdFormat(value);
+    });
 
-    if (focusNode != null &&
-        !focusNode.hasFocus &&
-        controller != null &&
-        controller.text.isNotEmpty) {
-      switch (field) {
-        case 'id':
-          _checkDuplicate('user_id', controller.text);
-          break;
-        case 'nickname':
-          _checkDuplicate('user_nickname', controller.text);
-          break;
-        case 'email':
-          _checkDuplicate('user_email', controller.text + _selectedDomain);
-          if (_isEmailDuplicate && focusNodes['email'] != null) {
-            showTooltip(focusNodes['email']!, 'email');
-          }
-          break;
-      }
-    } else if (focusNode != null && !focusNode.hasFocus) {
-      _tooltipManager.removeTooltip();
+    // 2. 형식이 유효하면 중복 확인 (디바운스)
+    if (_idFormatValidation.isValid && value.isNotEmpty) {
+      _idDebounceTimer?.cancel();
+      _idDebounceTimer = Timer(Duration(milliseconds: 500), () {
+        _checkDuplicate('user_id', value);
+      });
+    } else {
+      // 형식이 유효하지 않으면 중복 상태 초기화
+      updateUI(() {
+        _isIdDuplicate = false;
+      });
     }
   }
 
-  // 텍스트 변경 이벤트 통합 처리 - 이름 추가
-  void onTextChange(String field) {
-    switch (field) {
-      case 'name': // 새로 추가된 이름 검증
-        _nameDebounceTimer?.cancel();
-        if (controllers['name']?.text.isNotEmpty ?? false) {
-          _nameDebounceTimer = Timer(const Duration(milliseconds: 100), () {
-            _validateName(controllers['name']!.text);
-          });
-        } else {
-          updateUI(() {
-            _isNameValid = true;
-            _nameErrorMessage = null;
-          });
-          _tooltipManager.removeTooltip();
-        }
-        break;
+  // 닉네임 검증 (즉시 형식 + 디바운스 중복)
+  void validateNicknameAndCheckDuplicate(String value) {
+    // 1. 즉시 형식 검증
+    updateUI(() {
+      _nicknameFormatValidation = ClientValidator.validateNicknameFormat(value);
+    });
 
-      case 'id':
-        _idDebounceTimer?.cancel();
-        if (controllers['id']?.text.isNotEmpty ?? false) {
-          _idDebounceTimer = Timer(const Duration(milliseconds: 100), () {
-            _validateId(controllers['id']!.text);
-            if (_isIdFormatValid) {
-              _checkDuplicate('user_id', controllers['id']!.text);
-            }
-          });
-        } else {
-          updateUI(() {
-            _isIdDuplicate = false;
-            _isIdFormatValid = true;
-            _idErrorMessage = null;
-          });
-          _tooltipManager.removeTooltip();
-        }
-        break;
+    // 2. 형식이 유효하면 중복 확인 (디바운스)
+    if (_nicknameFormatValidation.isValid && value.isNotEmpty) {
+      _nicknameDebounceTimer?.cancel();
+      _nicknameDebounceTimer = Timer(Duration(milliseconds: 500), () {
+        _checkDuplicate('user_nickname', value);
+      });
+    } else {
+      updateUI(() {
+        _isNicknameDuplicate = false;
+      });
+    }
+  }
 
-      case 'nickname':
-        _nicknameDebounceTimer?.cancel();
-        if (controllers['nickname']?.text.isNotEmpty ?? false) {
-          _nicknameDebounceTimer = Timer(const Duration(milliseconds: 100), () {
-            _validateNickname(controllers['nickname']!.text);
-            if (_isNicknameFormatValid) {
-              _checkDuplicate('user_nickname', controllers['nickname']!.text);
-            }
-          });
-        } else {
-          updateUI(() {
-            _isNicknameDuplicate = false;
-            _isNicknameFormatValid = true;
-            _nicknameErrorMessage = null;
-          });
-          _tooltipManager.removeTooltip();
-        }
-        break;
+  // 비밀번호 검증 (즉시)
+  void validatePassword(String value) {
+    updateUI(() {
+      _passwordValidation = ClientValidator.validatePassword(value);
+    });
+  }
 
-      case 'email':
-        _emailDebounceTimer?.cancel();
-        if (controllers['email']?.text.isNotEmpty ?? false) {
-          _emailDebounceTimer = Timer(const Duration(milliseconds: 100), () {
-            _checkDuplicate(
-              'user_email',
-              controllers['email']!.text + _selectedDomain,
-            );
-          });
+  // 이메일 검증 (즉시 형식 + 디바운스 중복)
+  void validateEmailAndCheckDuplicate(String value) {
+    // 1. 즉시 형식 검증
+    updateUI(() {
+      _emailFormatValidation = ClientValidator.validateEmailFormat(value);
+    });
 
-          // 이메일이 변경되면 인증 상태 초기화
-          if (_isVerificationSent || _isEmailVerified) {
-            updateUI(() {
+    // 2. 형식이 유효하면 중복 확인 (디바운스)
+    if (_emailFormatValidation.isValid && value.isNotEmpty) {
+      final fullEmail = value + _selectedDomain;
+      _emailDebounceTimer?.cancel();
+      _emailDebounceTimer = Timer(Duration(milliseconds: 500), () {
+        _checkDuplicate('user_email', fullEmail);
+      });
+    } else {
+      updateUI(() {
+        _isEmailDuplicate = false;
+        _isVerificationSent = false;
+        _isEmailVerified = false;
+        _verificationTimer?.cancel();
+      });
+    }
+  }
+
+  // 중복 확인 (서버 통신)
+  Future<void> _checkDuplicate(String field, String value) async {
+    updateUI(() {
+      _isCheckingDuplicate = true;
+    });
+
+    final result = await SignupApiService.checkDuplicate(field, value);
+
+    updateUI(() {
+      _isCheckingDuplicate = false;
+
+      if (result['success']) {
+        switch (field) {
+          case 'user_id':
+            _isIdDuplicate = result['isDuplicate'];
+            break;
+          case 'user_nickname':
+            _isNicknameDuplicate = result['isDuplicate'];
+            break;
+          case 'user_email':
+            _isEmailDuplicate = result['isDuplicate'];
+            // 이메일이 중복되면 인증 상태 초기화
+            if (_isEmailDuplicate) {
               _isVerificationSent = false;
               _isEmailVerified = false;
-              _verificationError = '';
-              _verificationTimeLeft = 0;
               _verificationTimer?.cancel();
-            });
-          }
-        } else {
-          updateUI(() {
-            _isEmailDuplicate = false;
-          });
-          _tooltipManager.removeTooltip();
+            }
+            break;
         }
-        break;
-    }
-  }
-
-  // 이름 검증 - 새로 추가된 메서드
-  void _validateName(String name) {
-    updateUI(() {
-      _nameErrorMessage = InputValidator.getNameErrorMessage(name);
-      _isNameValid = _nameErrorMessage == null;
-
-      // 에러가 있으면 툴팁 표시
-      if (!_isNameValid && focusNodes.containsKey('name')) {
-        // 이름 필드에 포커스 노드가 없다면 생성 (필요시)
-        // showTooltip(focusNodes['name']!, 'name');
-      }
-    });
-  }
-
-  // 아이디 검증 - 새로 추가된 메서드
-  void _validateId(String id) {
-    updateUI(() {
-      _idErrorMessage = InputValidator.getIdErrorMessage(id);
-      _isIdFormatValid = _idErrorMessage == null;
-
-      // 양식 에러가 있으면 툴팁 표시
-      if (!_isIdFormatValid && focusNodes['id'] != null) {
-        showTooltip(focusNodes['id']!, 'id');
-      }
-    });
-  }
-
-  // 닉네임 검증 - 새로 추가된 메서드
-  void _validateNickname(String nickname) {
-    updateUI(() {
-      _nicknameErrorMessage = InputValidator.getNicknameErrorMessage(nickname);
-      _isNicknameFormatValid = _nicknameErrorMessage == null;
-
-      // 양식 에러가 있으면 툴팁 표시
-      if (!_isNicknameFormatValid && focusNodes['nickname'] != null) {
-        showTooltip(focusNodes['nickname']!, 'nickname');
-      }
-    });
-  }
-
-  // 스크롤 이벤트 처리
-  void onScroll() {
-    _tooltipManager.removeTooltip();
-  }
-
-  // 중복 확인 통합 처리 - 양식 검증 후에만 실행
-  Future<void> _checkDuplicate(String field, String value) async {
-    bool isDuplicate = await SignupApiService.checkDuplicate(field, value);
-
-    updateUI(() {
-      switch (field) {
-        case 'user_id':
-          _isIdDuplicate = isDuplicate;
-          if (_isIdDuplicate && focusNodes['id'] != null) {
-            showTooltip(focusNodes['id']!, 'id');
-          }
-          break;
-        case 'user_nickname':
-          _isNicknameDuplicate = isDuplicate;
-          if (_isNicknameDuplicate && focusNodes['nickname'] != null) {
-            showTooltip(focusNodes['nickname']!, 'nickname');
-          }
-          break;
-        case 'user_email':
-          _isEmailDuplicate = isDuplicate;
-          if (_isEmailDuplicate && focusNodes['email'] != null) {
-            showTooltip(focusNodes['email']!, 'email');
-          }
-
-          // 이메일이 중복되면 인증 상태 초기화
-          if (isDuplicate && (_isVerificationSent || _isEmailVerified)) {
-            _isVerificationSent = false;
-            _isEmailVerified = false;
-            _verificationError = '';
-            _verificationTimeLeft = 0;
-            _verificationTimer?.cancel();
-          }
-          break;
       }
     });
   }
 
   // 이메일 인증번호 발송
   Future<void> sendVerificationEmail(String email) async {
-    // 인증 상태 초기화
     _verificationTimer?.cancel();
-    controllers['verificationCode']?.clear();
 
     updateUI(() {
       _isVerificationSent = true;
       _isEmailVerified = false;
-      _verificationError = '';
-      _verificationTimeLeft = 300; // 5분 = 300초
+      _verificationTimeLeft = 300; // 5분
     });
 
-    // 타이머 시작 - 1초마다 갱신
+    // 타이머 시작
     _verificationTimer = Timer.periodic(Duration(seconds: 1), (timer) {
       updateUI(() {
         if (_verificationTimeLeft > 0) {
           _verificationTimeLeft--;
         } else {
           timer.cancel();
+          _isVerificationSent = false;
         }
       });
     });
 
-    // API 호출
-    final response = await SignupApiService.sendVerificationEmail(email);
+    final result = await SignupApiService.sendVerificationEmail(email);
 
-    if (!response['success']) {
+    _showMessage(result['message'], isError: !result['success']);
+
+    if (!result['success']) {
       updateUI(() {
-        _verificationError = response['message'];
+        _isVerificationSent = false;
+        _verificationTimer?.cancel();
       });
-
-      // 오류 메시지 표시
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(response['message'])));
-    } else {
-      // 성공 메시지 표시
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('인증번호가 이메일로 발송되었습니다.')));
     }
   }
 
   // 인증번호 확인
-  Future<void> verifyCode(String code) async {
-    final email = controllers['email']!.text + _selectedDomain;
-
-    // 인증 시간이 만료된 경우
-    if (_verificationTimeLeft <= 0) {
-      updateUI(() {
-        _verificationError = SignupConstants.verificationExpired;
-      });
-      return;
-    }
-
-    final response = await SignupApiService.verifyCode(email, code);
+  Future<void> verifyCode(String email, String code) async {
+    final result = await SignupApiService.verifyCode(email, code);
 
     updateUI(() {
-      if (response['success']) {
-        _isEmailVerified = true;
-        _verificationError = '';
+      _isEmailVerified = result['verified'];
+      if (_isEmailVerified) {
         _verificationTimer?.cancel();
-
-        // 성공 메시지 표시
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(SignupConstants.verificationSuccess),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        _verificationError = response['message'];
-
-        // 오류 메시지 표시
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(response['message']),
-            backgroundColor: Colors.red,
-          ),
-        );
       }
     });
-  }
 
-  // 이메일 유효성 설정
-  void setEmailValid(bool isValid) {
-    updateUI(() {
-      _isEmailValid = isValid;
-    });
-  }
-
-  // 도메인 업데이트
-  void updateDomain(String newDomain) {
-    updateUI(() {
-      _selectedDomain = newDomain;
-    });
-
-    // 이메일이 변경되면 인증 상태 초기화
-    if (_isVerificationSent || _isEmailVerified) {
-      updateUI(() {
-        _isVerificationSent = false;
-        _isEmailVerified = false;
-        _verificationError = '';
-        _verificationTimeLeft = 0;
-        _verificationTimer?.cancel();
-      });
-    }
-
-    if (controllers['email']?.text.isNotEmpty ?? false) {
-      _checkDuplicate(
-        'user_email',
-        controllers['email']!.text + _selectedDomain,
-      );
-    }
+    _showMessage(result['message'], isError: !result['success']);
   }
 
   // 툴팁 표시
@@ -750,74 +613,61 @@ class SignupController {
     _tooltipManager.showTooltip(context, node, tooltipType);
   }
 
-  // 회원가입 처리 - 검증 로직 강화
+  // 회원가입 처리
   Future<void> signup(GlobalKey<FormState> formKey) async {
     try {
-      // 기본 폼 유효성 검증
-      if (formKey.currentState?.validate() != true) {
+      // 전체 검증 확인
+      if (!isNameValid) {
+        _showMessage(_nameValidation.message ?? '이름을 확인해주세요.', isError: true);
         return;
       }
 
-      // 입력 양식 검증 - 새로 추가된 부분
-      if (!_isNameValid) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_nameErrorMessage ?? '이름을 올바르게 입력해주세요.')),
+      if (!isIdValid) {
+        if (!_idFormatValidation.isValid) {
+          _showMessage(
+            _idFormatValidation.message ?? '아이디를 확인해주세요.',
+            isError: true,
+          );
+        } else if (_isIdDuplicate) {
+          _showMessage('이미 사용 중인 아이디입니다.', isError: true);
+        }
+        return;
+      }
+
+      if (!isNicknameValid) {
+        if (!_nicknameFormatValidation.isValid) {
+          _showMessage(
+            _nicknameFormatValidation.message ?? '닉네임을 확인해주세요.',
+            isError: true,
+          );
+        } else if (_isNicknameDuplicate) {
+          _showMessage('이미 사용 중인 닉네임입니다.', isError: true);
+        }
+        return;
+      }
+
+      if (!isPasswordValid) {
+        _showMessage(
+          _passwordValidation.message ?? '비밀번호를 확인해주세요.',
+          isError: true,
         );
         return;
       }
 
-      if (!_isIdFormatValid) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_idErrorMessage ?? '아이디를 올바르게 입력해주세요.')),
-        );
+      if (!isEmailValid) {
+        if (!_emailFormatValidation.isValid) {
+          _showMessage(
+            _emailFormatValidation.message ?? '이메일을 확인해주세요.',
+            isError: true,
+          );
+        } else if (_isEmailDuplicate) {
+          _showMessage('이미 사용 중인 이메일입니다.', isError: true);
+        }
         return;
       }
 
-      if (!_isNicknameFormatValid) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_nicknameErrorMessage ?? '닉네임을 올바르게 입력해주세요.')),
-        );
-        return;
-      }
-
-      // 중복 확인
-      if (_isIdDuplicate) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('이미 사용 중인 아이디입니다.')));
-        return;
-      }
-
-      if (_isNicknameDuplicate) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('이미 사용 중인 닉네임입니다.')));
-        return;
-      }
-
-      if (_isEmailDuplicate) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('이미 사용 중인 이메일입니다.')));
-        return;
-      }
-
-      // 이메일 유효성 확인
-      bool isEmailValid = controllers['email']?.text.isNotEmpty ?? false;
-      setEmailValid(isEmailValid);
-
-      if (!_isEmailValid) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('올바른 이메일을 입력해주세요.')));
-        return;
-      }
-
-      // 이메일 인증 확인
       if (!_isEmailVerified) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('이메일 인증이 필요합니다.')));
+        _showMessage('이메일 인증이 필요합니다.', isError: true);
         return;
       }
 
@@ -833,79 +683,36 @@ class SignupController {
       // API 호출
       final result = await SignupApiService.signup(userData);
 
-      // 결과 처리
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result['message'],
-            style: const TextStyle(fontFamily: 'Pretendard'),
-          ),
-          backgroundColor: result['success'] ? Colors.green : Colors.red,
-        ),
-      );
+      _showMessage(result['message'], isError: !result['success']);
 
-      // 성공 시 로그인 페이지로 이동
       if (result['success'] == true) {
-        Navigator.of(context).pop(); // 로그인 페이지로 돌아가기
+        Navigator.of(context).pop();
       }
     } catch (e) {
       print('회원가입 처리 중 오류: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('회원가입 처리 중 오류가 발생했습니다: ${e.toString()}'),
-          backgroundColor: Colors.red,
+      _showMessage('회원가입 처리 중 오류가 발생했습니다.', isError: true);
+    }
+  }
+
+  // 메시지 표시 헬퍼
+  void _showMessage(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(fontFamily: 'Pretendard'),
         ),
-      );
-    }
+        backgroundColor: isError ? Colors.red : Colors.green,
+      ),
+    );
   }
 
-  // 이메일 인증 상태 확인 (선택 사항)
-  Future<void> checkEmailVerificationStatus() async {
-    final email = controllers['email']!.text + _selectedDomain;
-    try {
-      final response = await SignupApiService.checkEmailVerification(email);
-
-      updateUI(() {
-        _isEmailVerified = response['verified'] ?? false;
-      });
-
-      if (_isEmailVerified) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('이메일 인증이 확인되었습니다.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      print('이메일 인증 상태 확인 오류: $e');
-    }
-  }
-
-  // 리소스 정리
+  // 정리
   void dispose() {
+    _verificationTimer?.cancel();
     _idDebounceTimer?.cancel();
     _nicknameDebounceTimer?.cancel();
     _emailDebounceTimer?.cancel();
-    _nameDebounceTimer?.cancel(); // 이름 타이머도 해제
-    _verificationTimer?.cancel();
     _tooltipManager.dispose();
-  }
-
-  bool obscurePasswordText = true; // 비밀번호 가리기 (기본값 true)
-  bool obscureConfirmPasswordText = true; // 비밀번호 확인 가리기 (기본값 true)
-
-  // 비밀번호 표시/숨김 토글 메서드
-  void togglePasswordVisibility(Function setState) {
-    setState(() {
-      obscurePasswordText = !obscurePasswordText;
-    });
-  }
-
-  // 비밀번호 확인 표시/숨김 토글 메서드
-  void toggleConfirmPasswordVisibility(Function setState) {
-    setState(() {
-      obscureConfirmPasswordText = !obscureConfirmPasswordText;
-    });
   }
 }
