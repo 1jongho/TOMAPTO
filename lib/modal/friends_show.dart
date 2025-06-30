@@ -3,8 +3,13 @@ import 'package:tomapto/pages/friends/real_time_location_sharing.dart';
 
 class FriendsShowModal extends StatelessWidget {
   final Map<String, dynamic> friend;
+  final bool hasFollowRequest; // 추가된 파라미터
 
-  const FriendsShowModal({Key? key, required this.friend}) : super(key: key);
+  const FriendsShowModal({
+    Key? key,
+    required this.friend,
+    this.hasFollowRequest = false, // 추가된 파라미터
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -46,10 +51,37 @@ class FriendsShowModal extends StatelessWidget {
                 ),
                 child: Padding(
                   padding: EdgeInsets.only(left: 16.0),
-                  child: Text(
-                    '친구 위치 보기',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                    textAlign: TextAlign.left,
+                  child: Row(
+                    children: [
+                      Text(
+                        '친구 위치 보기',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      // 따라가기 요청이 있을 때 느낌표 표시
+                      if (hasFollowRequest)
+                        Container(
+                          margin: EdgeInsets.only(left: 8),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '!',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -94,40 +126,17 @@ class FriendsShowModal extends StatelessWidget {
 }
 
 // 프로필을 클릭했을 때 모달을 표시하는 함수
-void showFriendProfile(BuildContext context, Map<String, dynamic> friend) {
+void showFriendProfile(
+  BuildContext context,
+  Map<String, dynamic> friend, {
+  bool hasFollowRequest = false,
+}) {
   showDialog(
     context: context,
-    builder: (context) => FriendsShowModal(friend: friend),
+    builder:
+        (context) => FriendsShowModal(
+          friend: friend,
+          hasFollowRequest: hasFollowRequest, // 추가된 파라미터 전달
+        ),
   );
-}
-
-// 친구 프로필 위젯 예시 (선택적 사용)
-class FriendProfileWidget extends StatelessWidget {
-  final Map<String, dynamic> friendData;
-
-  const FriendProfileWidget({Key? key, required this.friendData})
-    : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        showFriendProfile(context, friendData);
-      },
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: Colors.grey[200],
-            child: Icon(Icons.person, size: 20, color: Colors.black),
-          ),
-          SizedBox(width: 8),
-          Text(
-            friendData['name'],
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
-    );
-  }
 }

@@ -13,6 +13,8 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:tomapto/pages/map/transit.dart';
+import 'package:tomapto/services/push_notification_service.dart';
 
 class RealTimeLocationSharingPage extends StatefulWidget {
   final Map<String, dynamic> selectedFriend;
@@ -28,7 +30,7 @@ class RealTimeLocationSharingPage extends StatefulWidget {
 class _RealTimeLocationSharingPageState
     extends State<RealTimeLocationSharingPage>
     with TickerProviderStateMixin {
-  // 애니메이션을 위해 추가
+  // 네이버 지도 관련
   NaverMapController? _mapController;
   NLatLng? _myPosition;
   NLatLng? _friendPosition;
@@ -36,12 +38,16 @@ class _RealTimeLocationSharingPageState
   bool _isInitialCameraSet = false;
   bool _isLoading = true;
   bool _isInitialLoadComplete = false;
+  bool _isModalCurrentlyShowing = false;
   String _errorMessage = '';
+  bool _isUpdatingMarkers = false;
 
   // 소켓 서비스 인스턴스
   late SocketService _socketService;
+
   // 위치 정보 자동 갱신을 위한 타이머
   Timer? _locationUpdateTimer;
+
   // 소켓 이벤트 구독자
   StreamSubscription? _locationUpdateSubscription;
   StreamSubscription? _followRequestSubscription;
@@ -50,14 +56,18 @@ class _RealTimeLocationSharingPageState
   StreamSubscription? _followStoppedSubscription;
 
   // 위치 공유 상태 추적 변수들
-  bool _isLocationSharingActive = false;
   bool _iAmSharingLocation = false;
   bool _friendIsSharingLocation = false;
 
-  // 따라가기 상태 추적 변수들
+  // 찾아가기 상태 추적 변수들
   String _followStatus = 'none'; // 'none', 'pending', 'accepted'
   bool _isRequester = false; // 내가 요청자인지 여부
   int? _currentRequestId; // 현재 요청 ID
+
+  // 1시간 만료 관련 변수들
+  Timer? _findWayExpiryTimer; // 만료 타이머
+  DateTime? _findWayStartTime; // 찾아가기 시작 시간
+  NLatLng? _friendFixedPosition; // 허용 시점 친구 고정 위치
 
   // 네이버맵 길찾기 관련 변수들
   Set<NPathOverlay> _pathOverlays = {};
@@ -66,12 +76,12 @@ class _RealTimeLocationSharingPageState
   // 마지막 업데이트 시간
   DateTime? _lastUpdateTime;
 
-  // 카메라 상태 관리 변수들 추가
+  // 카메라 상태 관리 변수들
   bool _userManuallyControlledCamera = false;
   DateTime? _lastManualCameraControl;
   double _currentZoom = 15.0;
 
-  // 파동 애니메이션 컨트롤러들 추가
+  // 파동 애니메이션 컨트롤러들
   late AnimationController _waveController1;
   late AnimationController _waveController2;
   late AnimationController _waveController3;
@@ -121,9 +131,11 @@ class _RealTimeLocationSharingPageState
     _socketService = SocketService();
     _initSocket();
     _loadLocations();
-    _loadFollowStatus(); // 따라가기 상태 로드
+    _loadFollowStatus();
+    _loadFindWayStartTime();
+    _saveFCMToken(); // FCM 토큰 저장 추가
 
-    // 1초마다 위치 정보 갱신 (카메라 줌 유지)
+    // 1초마다 위치 정보 갱신
     _locationUpdateTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       final now = DateTime.now();
       if (_lastUpdateTime == null ||
@@ -137,6 +149,8 @@ class _RealTimeLocationSharingPageState
   void dispose() {
     _locationUpdateTimer?.cancel();
     _locationUpdateSubscription?.cancel();
+
+    // 🔥 찾아가기 관련 리스너들 정리
     _followRequestSubscription?.cancel();
     _followResponseSubscription?.cancel();
     _followCancelledSubscription?.cancel();
@@ -168,99 +182,65 @@ class _RealTimeLocationSharingPageState
     return baseUrl;
   }
 
-  // 따라가기 상태 로드
+  // 찾아가기 상태 로드 (만료 체크 포함)
   Future<void> _loadFollowStatus() async {
     try {
+      print('🔍 찾아가기 상태 로드 시작');
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
+      final myUserId = prefs.getString('user_id');
 
       if (token == null) return;
 
       final apiBaseUrl = _getApiBaseUrl();
+      final url = '$apiBaseUrl/follow/status/${widget.selectedFriend['id']}';
+      print('🔍 API 호출: $url');
+
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/follow/status/${widget.selectedFriend['id']}'),
+        Uri.parse(url),
         headers: {'Authorization': 'Bearer $token'},
       );
 
+      print('🔍 응답 상태코드: ${response.statusCode}');
+      print('🔍 응답 데이터: ${response.body}');
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+
+        // 내가 요청자인지 직접 판단
+        bool isRequester = false;
+        if (data['status'] == 'pending' || data['status'] == 'accepted') {
+          isRequester = (data['requester_id'] == myUserId);
+        }
+
+        print('🔍 찾아가기 상태 설정: ${data['status']}, 요청자: $isRequester');
+
         setState(() {
           _followStatus = data['status'] ?? 'none';
-          _isRequester = data['is_requester'] ?? false;
+          _isRequester = isRequester; // 직접 계산한 값 사용
           _currentRequestId = data['request_id'];
+
+          // 🔥 추가: accepted 상태일 때 친구 고정 위치 설정
+          if (_followStatus == 'accepted' && _friendPosition != null) {
+            _friendFixedPosition = _friendPosition;
+            print('🔍 친구 고정 위치 설정: $_friendFixedPosition');
+          }
         });
 
-        // 수락된 상태이면 길찾기 시작
-        if (_followStatus == 'accepted') {
-          _startNavigation();
+        if (_followStatus == 'pending' && !_isRequester) {
+          Future.delayed(Duration(milliseconds: 500), () {
+            _showFollowRequestModal(
+              _currentRequestId ?? 0,
+              data['requester_name'] ?? '',
+            );
+          });
         }
+      } else {
+        print('❌ 찾아가기 상태 로드 실패: ${response.statusCode}');
       }
     } catch (e) {
-      print('따라가기 상태 로드 오류: $e');
+      print('❌ 찾아가기 상태 로드 오류: $e');
     }
-  }
-
-  // 길찾기 시작
-  void _startNavigation() {
-    if (_myPosition != null && _friendPosition != null) {
-      setState(() {
-        _isNavigating = true;
-      });
-      _updateNavigationRoute();
-    }
-  }
-
-  // 길찾기 중단
-  void _stopNavigation() {
-    setState(() {
-      _isNavigating = false;
-    });
-    _clearNavigationRoute();
-  }
-
-  // 네비게이션 경로 업데이트
-  Future<void> _updateNavigationRoute() async {
-    if (!_isNavigating ||
-        _myPosition == null ||
-        _friendPosition == null ||
-        _mapController == null) {
-      return;
-    }
-
-    try {
-      // 기존 경로 제거
-      _clearNavigationRoute();
-
-      // 네이버 방향 API 호출 (간단한 직선 경로로 대체)
-      // 실제 구현시에는 네이버 Direction API를 사용해야 합니다
-      final pathOverlay = NPathOverlay(
-        id: 'navigation_path',
-        coords: [_myPosition!, _friendPosition!],
-        color: Colors.blue,
-        width: 5,
-      );
-
-      setState(() {
-        _pathOverlays.add(pathOverlay);
-      });
-
-      _mapController!.addOverlay(pathOverlay);
-      print('네비게이션 경로 업데이트됨');
-    } catch (e) {
-      print('네비게이션 경로 업데이트 오류: $e');
-    }
-  }
-
-  // 네비게이션 경로 제거
-  void _clearNavigationRoute() {
-    if (_mapController != null) {
-      for (final overlay in _pathOverlays) {
-        _mapController!.deleteOverlay(overlay.info);
-      }
-    }
-    setState(() {
-      _pathOverlays.clear();
-    });
   }
 
   // 소켓 초기화 및 이벤트 리스너 설정
@@ -269,6 +249,13 @@ class _RealTimeLocationSharingPageState
       if (!_socketService.isConnected) {
         await _socketService.initSocket();
       }
+
+      // 🔥 기존 리스너들 정리
+      _followRequestSubscription?.cancel();
+      _followResponseSubscription?.cancel();
+      _followCancelledSubscription?.cancel();
+      _followStoppedSubscription?.cancel();
+      _locationUpdateSubscription?.cancel();
 
       // 기존 위치 관련 이벤트들
       _locationUpdateSubscription = _socketService.onLocationUpdate.listen((
@@ -321,80 +308,97 @@ class _RealTimeLocationSharingPageState
         }
       });
 
-      // 새로운 따라가기 관련 이벤트들
-      _followRequestSubscription =
-          _socketService.socket?.on('follow_request_received', (data) {
-                if (data['target_id'] == widget.selectedFriend['id']) {
-                  _showFollowRequestModal(
-                    data['request_id'],
-                    data['requester_name'],
-                  );
-                }
-              })
-              as StreamSubscription?;
+      // 찾아가기 요청 리스너
+      _followRequestSubscription = _socketService.onFollowRequestReceived
+          .listen((data) {
+            SharedPreferences.getInstance().then((prefs) {
+              final myUserId = prefs.getString('user_id');
 
-      _followResponseSubscription =
-          _socketService.socket?.on('follow_request_responded', (data) {
-                if (data['requester_id'] == widget.selectedFriend['id']) {
-                  final response = data['response'];
-                  final message =
-                      response == 'accept'
-                          ? '${data['target_name']}님이 따라가기 요청을 수락했습니다'
-                          : '${data['target_name']}님이 따라가기 요청을 거절했습니다';
+              print("🔔 찾아가기 요청 수신: $data");
 
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(message)));
+              // 내가 요청받은 사람인 경우만 모달 표시
+              if (data['target_id'].toString() == myUserId) {
+                print("✅ 모달 표시: 내가 요청받은 사람");
+                _showFollowRequestModal(
+                  data['request_id'] ?? 0,
+                  data['requester_name'] ?? '',
+                );
+              } else {
+                print("❌ 모달 표시 안함: target=${data['target_id']}, my=$myUserId");
+              }
+            });
+          });
 
-                  if (response == 'accept') {
-                    setState(() {
-                      _followStatus = 'accepted';
-                    });
-                    _startNavigation();
-                  } else {
-                    setState(() {
-                      _followStatus = 'none';
-                      _isRequester = false;
-                      _currentRequestId = null;
-                    });
-                  }
-                }
-              })
-              as StreamSubscription?;
+      _followResponseSubscription = _socketService.onFollowRequestResponded
+          .listen((data) {
+            SharedPreferences.getInstance().then((prefs) {
+              final myUserId = prefs.getString('user_id');
 
-      _followCancelledSubscription =
-          _socketService.socket?.on('follow_request_cancelled', (data) {
-                if (data['target_id'] == widget.selectedFriend['id']) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        '${data['requester_name']}님이 따라가기 요청을 취소했습니다',
-                      ),
-                    ),
-                  );
-                }
-              })
-              as StreamSubscription?;
+              if (data['requester_id'].toString() == myUserId) {
+                final response = data['response'];
+                final message =
+                    response == 'accept'
+                        ? '${data['target_name']}님이 찾아가기 요청을 수락했습니다'
+                        : '${data['target_name']}님이 찾아가기 요청을 거절했습니다';
 
-      _followStoppedSubscription =
-          _socketService.socket?.on('follow_stopped', (data) {
-                if (data['other_user_id'] == widget.selectedFriend['id']) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        '${data['stopped_by_name']}님이 따라가기를 중단했습니다',
-                      ),
-                    ),
-                  );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(message)));
+
+                if (response == 'accept') {
+                  setState(() {
+                    _followStatus = 'accepted';
+                  });
+                  _startNavigation();
+                } else {
                   setState(() {
                     _followStatus = 'none';
                     _isRequester = false;
                     _currentRequestId = null;
                   });
-                  _stopNavigation();
                 }
-              })
-              as StreamSubscription?;
+              }
+            });
+          });
+
+      _followCancelledSubscription = _socketService.onFollowRequestCancelled
+          .listen((data) {
+            SharedPreferences.getInstance().then((prefs) {
+              final myUserId = prefs.getString('user_id');
+
+              if (data['target_id'].toString() == myUserId) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '${data['requester_name']}님이 찾아가기 요청을 취소했습니다',
+                    ),
+                  ),
+                );
+              }
+            });
+          });
+
+      _followStoppedSubscription = _socketService.onFollowStopped.listen((
+        data,
+      ) {
+        SharedPreferences.getInstance().then((prefs) {
+          final myUserId = prefs.getString('user_id');
+
+          if (data['other_user_id'].toString() == myUserId) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${data['stopped_by_name']}님이 찾아가기를 중단했습니다'),
+              ),
+            );
+            setState(() {
+              _followStatus = 'none';
+              _isRequester = false;
+              _currentRequestId = null;
+            });
+            _stopNavigation();
+          }
+        });
+      });
 
       print('소켓 이벤트 리스너 설정 완료');
     } catch (e) {
@@ -402,8 +406,247 @@ class _RealTimeLocationSharingPageState
     }
   }
 
-  // 따라가기 요청 모달 표시
+  // 친구 위치 업데이트 처리
+  void _handleFriendLocationUpdate(Map<String, dynamic> data) {
+    if (!mounted) return;
+
+    final lat = double.tryParse(data['latitude'].toString());
+    final lng = double.tryParse(data['longitude'].toString());
+
+    if (lat != null && lng != null) {
+      setState(() {
+        _friendPosition = NLatLng(lat, lng);
+        _lastUpdateTime = DateTime.now();
+      });
+
+      // 스마트 마커 업데이트 (카메라 변경 없이)
+      if (_mapController != null) {
+        _updateMapMarkersWithoutCameraChange();
+      }
+
+      // 길찾기 중이면 경로 업데이트
+      if (_isNavigating) {
+        _updateNavigationRoute();
+      }
+    }
+  }
+
+  void _handleFollowRequest(Map<String, dynamic> data) {
+    // 이미 소켓 리스너에서 필터링했으므로 바로 모달 표시
+    print("모달 표시 준비: $data");
+    if (_isModalCurrentlyShowing) return;
+
+    _isModalCurrentlyShowing = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => FollowRequestModal(
+            requestId: data['request_id'] ?? 0,
+            requesterName: data['requester_name'] ?? '',
+            onResponseSent: () {
+              _isModalCurrentlyShowing = false;
+              _loadFollowStatus(); // 상태 다시 로드
+            },
+          ),
+    ).then((_) {
+      _isModalCurrentlyShowing = false;
+    });
+  }
+
+  // 찾아가기 응답 처리
+  void _handleFollowResponse(Map<String, dynamic> data) {
+    if (!mounted) return;
+
+    final response = data['response'];
+    if (response == 'accept') {
+      setState(() {
+        _followStatus = 'accepted';
+        _findWayStartTime = DateTime.now(); // 허용 시점 시간 저장
+        _friendFixedPosition = _friendPosition; // 현재 친구 위치를 고정으로 저장
+      });
+
+      // SharedPreferences에 시간 저장
+      _saveFindWayStartTime();
+
+      // 1시간 만료 타이머 시작
+      _startFindWayExpiryTimer();
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('찾아가기 요청이 수락되었습니다')));
+      // 추가: 수락 후 잠시 딜레이를 두고 Transit 페이지 안내
+      Future.delayed(Duration(seconds: 2), () {
+        if (mounted && _followStatus == 'accepted' && _isRequester) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('친구 마커를 클릭하면 길찾기를 시작할 수 있습니다'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      });
+    } else {
+      setState(() {
+        _followStatus = 'none';
+        _currentRequestId = null;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('찾아가기 요청이 거절되었습니다')));
+    }
+  }
+
+  // 찾아가기 취소 처리
+  void _handleFollowCancelled(Map<String, dynamic> data) {
+    if (!mounted) return;
+
+    setState(() {
+      _followStatus = 'none';
+      _currentRequestId = null;
+      _findWayStartTime = null;
+      _friendFixedPosition = null;
+      _isNavigating = false;
+    });
+
+    // 타이머 및 경로 정리
+    _findWayExpiryTimer?.cancel();
+    _clearNavigationRoute();
+    _clearFindWayStartTime();
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('찾아가기 요청이 취소되었습니다')));
+  }
+
+  // 찾아가기 중단 처리
+  void _handleFollowStopped(Map<String, dynamic> data) {
+    if (!mounted) return;
+
+    setState(() {
+      _followStatus = 'none';
+      _isNavigating = false;
+      _isRequester = false;
+      _currentRequestId = null;
+      _findWayStartTime = null;
+      _friendFixedPosition = null;
+    });
+
+    // 타이머 및 경로 정리
+    _findWayExpiryTimer?.cancel();
+    _clearNavigationRoute();
+    _clearFindWayStartTime();
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('찾아가기가 중단되었습니다')));
+  }
+
+  // 찾아가기 요청 전송
+  void _sendFollowRequest() {
+    final friendId = widget.selectedFriend['id'].toString();
+    _socketService.sendFollowRequest(friendId);
+
+    setState(() {
+      _followStatus = 'pending';
+      _isRequester = true;
+    });
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('찾아가기 요청을 보냈습니다')));
+  }
+
+  // 찾아가기 요청 취소
+  void _cancelFollowRequest() {
+    final friendId = widget.selectedFriend['id'].toString();
+    _socketService.cancelFollowRequest(friendId);
+
+    setState(() {
+      _followStatus = 'none';
+      _isRequester = false;
+      _currentRequestId = null;
+    });
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('찾아가기 요청을 취소했습니다')));
+  }
+
+  // 위치 공유 시작 요청
+  Future<void> _requestLocationSharing() async {
+    try {
+      final friendId = widget.selectedFriend['id'].toString();
+      _socketService.startLocationSharing(friendId, null); // 무제한 시간
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${widget.selectedFriend['name']}님에게 위치 공유를 요청했습니다'),
+        ),
+      );
+    } catch (e) {
+      print('위치 공유 요청 오류: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('위치 공유 요청에 실패했습니다')));
+    }
+  }
+
+  // 위치 공유 중단 요청
+  Future<void> _stopLocationSharing() async {
+    try {
+      final friendId = widget.selectedFriend['id'].toString();
+      _socketService.stopLocationSharing(friendId);
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('위치 공유를 중단했습니다')));
+    } catch (e) {
+      print('위치 공유 중단 오류: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('위치 공유 중단에 실패했습니다')));
+    }
+  }
+
+  // 내 위치 팔로우
+  void _followMyLocation() {
+    if (_myPosition != null && _mapController != null) {
+      _mapController!.updateCamera(
+        NCameraUpdate.withParams(target: _myPosition!, zoom: _currentZoom),
+      );
+    }
+  }
+
+  // 내 위치 데이터베이스 업데이트
+  Future<void> _updateMyLocationInDatabase() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null || TokenService.isTokenExpired(token)) {
+        return;
+      }
+
+      final myLocationData = await LocationService.getCurrentLocation();
+      if (myLocationData != null) {
+        await LocationService.updateMyLocation(
+          myLocationData.latitude,
+          myLocationData.longitude,
+        );
+      }
+    } catch (e) {
+      print('위치 업데이트 오류: $e');
+    }
+  }
+
   void _showFollowRequestModal(int requestId, String requesterName) {
+    if (!mounted || _isModalCurrentlyShowing) return; // 🔥 안전 체크
+
+    _isModalCurrentlyShowing = true;
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -412,26 +655,256 @@ class _RealTimeLocationSharingPageState
             requestId: requestId,
             requesterName: requesterName,
             onResponseSent: () {
-              _loadFollowStatus(); // 상태 다시 로드
+              print('🔥 모달 응답 완료, 상태 새로고침');
+              if (mounted) {
+                _isModalCurrentlyShowing = false;
+                _loadFollowStatus(); // 상태 다시 로드
+              }
             },
           ),
-    );
+    ).then((_) {
+      print('🔥 모달 완전히 닫힘');
+      if (mounted) {
+        _isModalCurrentlyShowing = false;
+        // 🔥 모달 닫힐 때는 상태 새로고침 하지 않음 (중복 방지)
+      }
+    });
   }
 
-  // 친구 마커 클릭 시 따라가기 모달 표시
-  void _showFollowModal() {
+  // 찾아가기 모달 표시
+  void _showFindWayModal() {
+    if (_isModalCurrentlyShowing) return;
+
+    _isModalCurrentlyShowing = true;
+
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder:
           (context) => FollowModal(
-            friend: widget.selectedFriend,
+            friend: widget.selectedFriend, // 🔥 수정: friendName -> friend
             currentStatus: _followStatus,
             isRequester: _isRequester,
             onStatusChanged: () {
-              _loadFollowStatus(); // 상태 다시 로드
+              _loadFollowStatus();
+              _isModalCurrentlyShowing = false;
+
+              // 🔥 추가: 허용된 상태에서 요청자가 길찾기 시작을 눌렀을 때 Transit 페이지로 이동
+              Future.delayed(Duration(milliseconds: 500), () {
+                if (_followStatus == 'accepted' &&
+                    _isRequester &&
+                    _friendFixedPosition != null &&
+                    _myPosition != null) {
+                  print('🔥 조건 만족 - Transit 페이지로 이동');
+                  _navigateToTransitPage();
+                } else {
+                  print(
+                    '🔥 조건 불만족 - Transit 이동 안함: status=$_followStatus, isRequester=$_isRequester',
+                  );
+                }
+              });
             },
           ),
+    ).then((_) {
+      _isModalCurrentlyShowing = false;
+    });
+  }
+
+  // FCM 토큰 서버에 저장
+  Future<void> _saveFCMToken() async {
+    try {
+      print('🔥 real_time_location_sharing에서 FCM 토큰 저장 시작');
+
+      final token = await PushNotificationService().getCurrentToken();
+      if (token != null) {
+        final prefs = await SharedPreferences.getInstance();
+        final authToken = prefs.getString('token');
+
+        if (authToken != null) {
+          final apiBaseUrl = _getApiBaseUrl();
+          final response = await http.post(
+            Uri.parse('$apiBaseUrl/account/profile/save-fcm-token'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $authToken',
+            },
+            body: json.encode({'fcm_token': token}),
+          );
+
+          print('🔥 FCM 토큰 서버 응답: ${response.statusCode}');
+          print('🔥 FCM 토큰 서버 응답 내용: ${response.body}');
+
+          if (response.statusCode == 200) {
+            print('🔥 FCM 토큰 서버에 저장 완료');
+          }
+        } else {
+          print('🔥 Auth Token 없음');
+        }
+      }
+    } catch (e) {
+      print('🔥 FCM 토큰 저장 오류: $e');
+    }
+  }
+
+  // 찾아가기 시작 시간 저장
+  Future<void> _saveFindWayStartTime() async {
+    if (_findWayStartTime != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'findway_start_time_${widget.selectedFriend['id']}',
+        _findWayStartTime!.toIso8601String(),
+      );
+    }
+  }
+
+  // 찾아가기 시작 시간 불러오기
+  Future<void> _loadFindWayStartTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    final timeString = prefs.getString(
+      'findway_start_time_${widget.selectedFriend['id']}',
     );
+
+    if (timeString != null) {
+      _findWayStartTime = DateTime.parse(timeString);
+
+      // 1시간이 지났는지 확인
+      final now = DateTime.now();
+      final difference = now.difference(_findWayStartTime!);
+
+      if (difference.inHours >= 1) {
+        // 이미 만료됨
+        _expireFindWay();
+      } else {
+        // 아직 유효함 - 남은 시간으로 타이머 설정
+        final remainingTime = Duration(hours: 1) - difference;
+        _startFindWayExpiryTimer(duration: remainingTime);
+      }
+    }
+  }
+
+  // 1시간 만료 타이머 시작
+  void _startFindWayExpiryTimer({Duration? duration}) {
+    _findWayExpiryTimer?.cancel(); // 기존 타이머 취소
+
+    final timerDuration = duration ?? Duration(hours: 1);
+
+    _findWayExpiryTimer = Timer(timerDuration, () {
+      _expireFindWay();
+    });
+  }
+
+  // 찾아가기 만료 처리
+  void _expireFindWay() {
+    if (!mounted) return;
+
+    setState(() {
+      _followStatus = 'none';
+      _isRequester = false;
+      _currentRequestId = null;
+      _findWayStartTime = null;
+      _friendFixedPosition = null;
+      _isNavigating = false;
+    });
+
+    // 경로 제거
+    _clearNavigationRoute();
+
+    // SharedPreferences에서 시간 정보 제거
+    _clearFindWayStartTime();
+
+    // 만료 알림
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('찾아가기 시간이 만료되었습니다'),
+        backgroundColor: Colors.orange,
+      ),
+    );
+  }
+
+  // 찾아가기 시간 정보 제거
+  Future<void> _clearFindWayStartTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('findway_start_time_${widget.selectedFriend['id']}');
+  }
+
+  // 찾아가기 상태에 따른 하단바 메시지 생성
+  String _getFindWayStatusMessage() {
+    switch (_followStatus) {
+      case 'pending':
+        if (_isRequester) {
+          return '${widget.selectedFriend['name']}님에게 알림을 보냈습니다';
+        } else {
+          return '${widget.selectedFriend['name']}님이 찾아가기를 요청했습니다';
+        }
+      case 'accepted':
+        if (_isRequester) {
+          return '${widget.selectedFriend['name']}님 마커를 클릭하여 길찾기 시작';
+        } else {
+          return '${widget.selectedFriend['name']}님이 찾아가기 하는중';
+        }
+      default:
+        return '';
+    }
+  }
+
+  // 찾아가기 상태에 따른 하단바 색상 결정
+  Color _getFindWayStatusColor() {
+    switch (_followStatus) {
+      case 'pending':
+        return Colors.blue[50]!;
+      case 'accepted':
+        return Colors.green[50]!;
+      default:
+        return Colors.grey[50]!;
+    }
+  }
+
+  // 찾아가기 상태에 따른 하단바 테두리 색상 결정
+  Color _getFindWayStatusBorderColor() {
+    switch (_followStatus) {
+      case 'pending':
+        return Colors.blue[300]!;
+      case 'accepted':
+        return Colors.green[300]!;
+      default:
+        return Colors.grey[300]!;
+    }
+  }
+
+  // Transit 페이지로 이동
+  void _navigateToTransitPage() {
+    if (_myPosition == null || _friendFixedPosition == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('위치 정보를 가져올 수 없습니다')));
+      return;
+    }
+
+    // TransitApp으로 이동 (실제 프로젝트 구조에 맞게)
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => TransitApp(
+              initialOriginPlace: '내 위치',
+              initialOriginCoords: _myPosition!,
+              initialDestinationPlace: '${widget.selectedFriend['name']}님 위치',
+              initialDestinationCoords: _friendFixedPosition!,
+            ),
+      ),
+    );
+  }
+
+  // 찾아가기 상태에 따른 아이콘 결정
+  IconData _getFindWayStatusIcon() {
+    switch (_followStatus) {
+      case 'pending':
+        return Icons.pending;
+      case 'accepted':
+        return _isRequester ? Icons.navigation : Icons.location_on;
+      default:
+        return Icons.info;
+    }
   }
 
   // 초기 로딩 시에만 로딩 표시와 함께 데이터 로드
@@ -573,6 +1046,13 @@ class _RealTimeLocationSharingPageState
         haloColor: Colors.white,
       ),
     );
+
+    // 이벤트 리스너 설정
+    marker.setOnTapListener((overlay) {
+      print("내 위치 터치됨!");
+      // 내 위치 관련 로직
+    });
+
     return marker;
   }
 
@@ -593,48 +1073,67 @@ class _RealTimeLocationSharingPageState
         haloColor: Colors.white,
       ),
     );
+
+    // 친구 마커 클릭 이벤트 수정
+    marker.setOnTapListener((overlay) {
+      print("친구 위치 터치됨!");
+      print("현재 찾아가기 상태: $_followStatus");
+      print("내가 요청자인지: $_isRequester");
+      print("친구 고정 위치: $_friendFixedPosition");
+      print("내 위치: $_myPosition");
+
+      // 🔥 수정된 조건: 모든 경우에 모달을 먼저 표시
+      print("찾아가기 모달 표시");
+      _showFindWayModal();
+    });
+
     return marker;
   }
 
-  // 카메라 변경 없이 마커만 업데이트하는 함수 추가
+  // 카메라 변경 없이 마커만 업데이트하는 함수
   Future<void> _updateMapMarkersWithoutCameraChange() async {
-    if (_mapController == null) return;
+    if (_mapController == null || _isUpdatingMarkers) return;
 
-    // 기존 마커 모두 제거
-    if (_markers.isNotEmpty) {
-      for (final marker in _markers) {
-        _mapController!.deleteOverlay(marker.info);
+    _isUpdatingMarkers = true;
+
+    try {
+      // 기존 마커 모두 제거
+      if (_markers.isNotEmpty) {
+        for (final marker in _markers) {
+          try {
+            await _mapController!.deleteOverlay(marker.info);
+          } catch (e) {
+            // 이미 삭제된 마커는 무시
+          }
+        }
+        _markers.clear();
       }
-      _markers.clear();
-    }
 
-    // 내 위치 마커 추가
-    if (_myPosition != null && _iAmSharingLocation) {
-      final myMarker = _createMyLocationMarker();
-      myMarker.setOnTapListener((NMarker marker) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('내 현재 위치')));
-      });
-      _mapController!.addOverlay(myMarker);
-      _markers.add(myMarker);
-    }
-
-    // 친구 위치 마커 추가
-    if (_friendPosition != null &&
-        _friendIsSharingLocation &&
-        _iAmSharingLocation) {
-      if (_friendPosition!.latitude != 0 && _friendPosition!.longitude != 0) {
-        final friendMarker = _createFriendLocationMarker();
-
-        // 친구 마커 클릭 시 따라가기 모달 표시
-        friendMarker.setOnTapListener((NMarker marker) {
-          _showFollowModal();
+      // 내 위치 마커 추가
+      if (_myPosition != null && _iAmSharingLocation) {
+        final myMarker = _createMyLocationMarker();
+        myMarker.setOnTapListener((NMarker marker) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('내 현재 위치')));
         });
-
-        _mapController!.addOverlay(friendMarker);
-        _markers.add(friendMarker);
+        await _mapController!.addOverlay(myMarker);
+        _markers.add(myMarker);
       }
+
+      // 친구 위치 마커 추가
+      if (_friendPosition != null &&
+          _friendIsSharingLocation &&
+          _iAmSharingLocation) {
+        if (_friendPosition!.latitude != 0 && _friendPosition!.longitude != 0) {
+          final friendMarker = _createFriendLocationMarker();
+
+          await _mapController!.addOverlay(friendMarker);
+          _markers.add(friendMarker);
+        }
+      }
+    } finally {
+      _isUpdatingMarkers = false;
     }
   }
 
@@ -658,6 +1157,94 @@ class _RealTimeLocationSharingPageState
       }
       _isInitialCameraSet = true;
     }
+  }
+
+  // 길찾기 시작
+  void _startNavigation() {
+    if (_friendPosition == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('친구의 위치 정보가 없습니다')));
+      return;
+    }
+
+    setState(() {
+      _isNavigating = true;
+    });
+
+    _updateNavigationRoute();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${widget.selectedFriend['name']}님에게 찾아가기를 시작합니다'),
+      ),
+    );
+  }
+
+  // 길찾기 중단
+  void _stopNavigation() {
+    if (!_isNavigating) return;
+
+    setState(() {
+      _isNavigating = false;
+    });
+
+    // 경로 오버레이 제거
+    _clearNavigationRoute();
+
+    print('네비게이션 중단됨');
+
+    // 스낵바로 사용자에게 알림
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('찾아가기가 중단되었습니다'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  // 네비게이션 경로 업데이트
+  Future<void> _updateNavigationRoute() async {
+    if (!_isNavigating ||
+        _myPosition == null ||
+        _friendPosition == null ||
+        _mapController == null) {
+      return;
+    }
+
+    try {
+      // 기존 경로 제거
+      _clearNavigationRoute();
+
+      // 네이버 방향 API 호출
+      final pathOverlay = NPathOverlay(
+        id: 'navigation_path',
+        coords: [_myPosition!, _friendPosition!],
+        color: Colors.blue,
+        width: 5,
+      );
+
+      setState(() {
+        _pathOverlays.add(pathOverlay);
+      });
+
+      _mapController!.addOverlay(pathOverlay);
+      print('네비게이션 경로 업데이트됨');
+    } catch (e) {
+      print('네비게이션 경로 업데이트 오류: $e');
+    }
+  }
+
+  // 네비게이션 경로 제거
+  void _clearNavigationRoute() {
+    if (_mapController != null) {
+      for (final overlay in _pathOverlays) {
+        _mapController!.deleteOverlay(overlay.info);
+      }
+    }
+    setState(() {
+      _pathOverlays.clear();
+    });
   }
 
   // 두 위치 간 거리 계산 (미터 단위)
@@ -879,26 +1466,25 @@ class _RealTimeLocationSharingPageState
               ),
             ),
 
-          // 위치 공유 상태 메시지 - 트렌디한 레이더 디자인으로 개선
+          // 위치 공유 상태 메시지 - 트렌디한 레이더 디자인
           if (!_isLoading &&
               _errorMessage.isEmpty &&
               !_iAmSharingLocation &&
               _isInitialLoadComplete)
             Container(
-              color: Colors.transparent, // 전체 배경 투명 (지도 보임)
+              color: Colors.transparent,
               child: Center(
                 child: Container(
                   margin: const EdgeInsets.all(20.0),
                   padding: const EdgeInsets.all(32.0),
                   decoration: BoxDecoration(
-                    // 지도가 안 보이도록 불투명한 색상 + 트렌디한 그라데이션
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [
-                        Color(0xFF1F2937), // gray-800 (불투명)
-                        Color(0xFF111827), // gray-900 (불투명)
-                        Color(0xFF0F172A), // slate-900 (불투명)
+                        Color(0xFF1F2937),
+                        Color(0xFF111827),
+                        Color(0xFF0F172A),
                       ],
                     ),
                     borderRadius: BorderRadius.circular(24),
@@ -996,8 +1582,8 @@ class _RealTimeLocationSharingPageState
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
                                     colors: [
-                                      Color(0xFF3B82F6), // blue-500
-                                      Color(0xFF8B5CF6), // purple-600
+                                      Color(0xFF3B82F6),
+                                      Color(0xFF8B5CF6),
                                     ],
                                   ),
                                   boxShadow: [
@@ -1128,9 +1714,9 @@ class _RealTimeLocationSharingPageState
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  Color(0xFF2563EB), // blue-600
-                                  Color(0xFF8B5CF6), // purple-600
-                                  Color(0xFFEC4899), // pink-600
+                                  Color(0xFF2563EB),
+                                  Color(0xFF8B5CF6),
+                                  Color(0xFFEC4899),
                                 ],
                               ),
                               borderRadius: BorderRadius.circular(16),
@@ -1220,8 +1806,8 @@ class _RealTimeLocationSharingPageState
               ),
             ),
 
-          // 따라가기 상태 표시
-          if (_followStatus == 'pending' && _isRequester)
+          // 찾아가기 상태 표시 (통합된 하단바)
+          if (_followStatus != 'none' && _getFindWayStatusMessage().isNotEmpty)
             Positioned(
               bottom: 140,
               left: 16,
@@ -1229,20 +1815,70 @@ class _RealTimeLocationSharingPageState
               child: Container(
                 padding: EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.blue[50],
+                  color: _getFindWayStatusColor(),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue[300]!),
+                  border: Border.all(color: _getFindWayStatusBorderColor()),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.pending, color: Colors.blue),
+                    Icon(
+                      _getFindWayStatusIcon(),
+                      color: _getFindWayStatusBorderColor(),
+                    ),
                     SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        '${widget.selectedFriend['name']}님에게 따라가기 요청을 보냈습니다',
-                        style: TextStyle(color: Colors.blue[700]),
+                        _getFindWayStatusMessage(),
+                        style: TextStyle(color: _getFindWayStatusBorderColor()),
                       ),
                     ),
+                    // 상태별 추가 정보 표시
+                    if (_followStatus == 'accepted' &&
+                        _findWayStartTime != null)
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange[100],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: StreamBuilder(
+                          stream: Stream.periodic(Duration(seconds: 1)),
+                          builder: (context, snapshot) {
+                            if (_findWayStartTime == null)
+                              return SizedBox.shrink();
+
+                            final now = DateTime.now();
+                            final elapsed = now.difference(_findWayStartTime!);
+                            final remaining = Duration(hours: 1) - elapsed;
+
+                            if (remaining.isNegative) {
+                              return Text(
+                                '만료됨',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.red[700],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              );
+                            }
+
+                            final minutes = remaining.inMinutes;
+                            final seconds = remaining.inSeconds % 60;
+
+                            return Text(
+                              '${minutes}:${seconds.toString().padLeft(2, '0')}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1267,7 +1903,7 @@ class _RealTimeLocationSharingPageState
                     SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        '${widget.selectedFriend['name']}님을 따라가는 중입니다',
+                        '${widget.selectedFriend['name']}님을 찾아가는 중입니다',
                         style: TextStyle(color: Colors.green[700]),
                       ),
                     ),

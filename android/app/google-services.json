@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "543459576676",
+    "project_id": "tomapto-c358d",
+    "storage_bucket": "tomapto-c358d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:543459576676:android:ab6697c5a62a510fcfc871",
+        "android_client_info": {
+          "package_name": "com.example.tomapto"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAb9gZIqE7U00Gjbr5Y4lynfdYt9F1QqUE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

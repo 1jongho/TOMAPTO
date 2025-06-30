@@ -26,19 +26,26 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	
+	<!-- 네이버 맵 API 키 (기존) -->
 	<key>NMFClientId</key>
 	<string>$(NAVER_API_KEY)</string>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSExceptionDomains</key>
-		<dict/>
-	</dict>
+	
+	<!-- 기존 위치 권한 설명 유지 -->
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>사용자의 현재 위치는 사용자 근처의 정보를 가져오는데 반드시 필요합니다!</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>사용자의 현재 위치는 사용자 근처의 정보를 가져오는데 반드시 필요합니다!</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>사용자의 현재 위치는 사용자 근처의 정보를 가져오는데 반드시 필요합니다!</string>
+	
+	<!-- 기존 네트워크 보안 설정 유지 -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict/>
+	</dict>
+	
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -59,6 +66,24 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	
+	<!-- ========== Firebase 관련 설정 추가 ========== -->
+	
+	<!-- Firebase 설정 -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
+	
+	<!-- 푸시알림 권한 설명 -->
+	<key>NSUserNotificationUsageDescription</key>
+	<string>친구의 찾아가기 요청과 위치 공유 알림을 받기 위해 알림 권한이 필요합니다.</string>
+	
+	<!-- 백그라운드 모드 -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>background-processing</string>
+		<string>location</string>
 	</array>
 </dict>
 </plist>

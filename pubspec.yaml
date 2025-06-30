@@ -1,6 +1,6 @@
 name: tomapto
-description: 'A new Flutter project.'
-publish_to: 'none'
+description: "A new Flutter project."
+publish_to: "none"
 version: 1.0.0+1
 environment:
   sdk: ^3.7.2
@@ -18,12 +18,17 @@ dependencies:
   shared_preferences: ^2.5.3
   lib: ^0.0.3
   intl: ^0.19.0
+
   image_picker: ^1.0.4
 
   socket_io_client: ^3.1.1
   flutter_local_notifications: ^19.1.0
   flutter_compass: ^0.8.1
   provider: ^6.1.5
+
+  # Firebase 패키지들
+  firebase_core: ^3.8.1
+  firebase_messaging: ^15.1.6
 
 dev_dependencies:
   flutter_test:
@@ -34,15 +39,15 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: 'assets/icons/tomapto.png'
-  adaptive_icon_background: '#FFFFFF'
+  image_path: "assets/icons/tomapto.png"
+  adaptive_icon_background: "#FFFFFF"
   remove_alpha_ios: true
-flutter_native_splash: # 여기가 최상위 레벨이어야 함
-  color: '#ffffff'
-  image: 'assets/icons/intro_logo.png'
+flutter_native_splash:
+  color: "#ffffff"
+  image: "assets/icons/intro_logo.png"
   android_12:
-    image: 'assets/icons/intro_logo.png'
-    color: '#ffffff'
+    image: "assets/icons/intro_logo.png"
+    color: "#ffffff"
 flutter:
   uses-material-design: true
   assets:

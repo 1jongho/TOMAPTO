@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tomapto/services/push_notification_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:io' show Platform;
@@ -121,6 +122,15 @@ class LoginController {
 
           print('로그인 성공: 토큰 저장됨. remember_me=$rememberMe, is_logged_in=true');
 
+          // 🔥 FCM 토큰 저장 추가
+          try {
+            print('🔥 로그인 후 FCM 토큰 저장 시작');
+            await _saveFCMTokenToServer();
+            print('🔥 로그인 후 FCM 토큰 저장 완료');
+          } catch (e) {
+            print('🔥 로그인 후 FCM 토큰 저장 실패: $e');
+          }
+
           // 자동 위치 서비스 시작 코드 제거 (이 부분을 삭제하면 로그인 시 위치 활성화가 자동으로 되지 않음)
 
           return true;
@@ -164,6 +174,44 @@ class LoginController {
       return true;
     }
     return false;
+  }
+
+  Future<void> _saveFCMTokenToServer() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final authToken = prefs.getString('token');
+
+      if (authToken == null) {
+        print('🔥 Auth Token 없음 - FCM 토큰 저장 불가');
+        return;
+      }
+
+      final fcmToken = await PushNotificationService().getCurrentToken();
+      if (fcmToken == null) {
+        print('🔥 FCM Token 없음');
+        return;
+      }
+
+      final response = await http.post(
+        Uri.parse('${ApiService.getApiBaseUrl()}/account/save-fcm-token'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $authToken',
+        },
+        body: json.encode({'fcm_token': fcmToken}),
+      );
+
+      print('🔥 FCM 토큰 서버 응답: ${response.statusCode}');
+      print('🔥 FCM 토큰 서버 응답 내용: ${response.body}');
+
+      if (response.statusCode == 200) {
+        print('🔥 FCM 토큰 서버 저장 성공');
+      } else {
+        print('🔥 FCM 토큰 서버 저장 실패: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('🔥 FCM 토큰 저장 오류: $e');
+    }
   }
 }
 

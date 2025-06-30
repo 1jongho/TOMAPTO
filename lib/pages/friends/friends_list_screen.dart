@@ -24,7 +24,8 @@ class FriendScreen extends StatefulWidget {
   _FriendScreenState createState() => _FriendScreenState();
 }
 
-class _FriendScreenState extends State<FriendScreen> {
+class _FriendScreenState extends State<FriendScreen>
+    with WidgetsBindingObserver {
   // 친구 데이터
   List<Map<String, dynamic>> friends = [];
 
@@ -44,7 +45,14 @@ class _FriendScreenState extends State<FriendScreen> {
   // 검색창 포커스 관리
   final FocusNode _searchFocus = FocusNode();
 
-  // 아이디 마스킹 함수 추가
+  // 따라가기 요청 관리
+  Set<String> _followRequestFriends = {}; // 따라가기 요청이 있는 친구들의 ID
+
+  // RealTimeLocationService 인스턴스
+  final RealTimeLocationService _realTimeLocationService =
+      RealTimeLocationService();
+
+  // 아이디 마스킹 함수
   String _maskUserId(String userId) {
     if (userId.length < 5) {
       return userId; // 기존 사용자 대응
@@ -60,6 +68,9 @@ class _FriendScreenState extends State<FriendScreen> {
   void initState() {
     super.initState();
 
+    // 앱 생명주기 관찰자 등록
+    WidgetsBinding.instance.addObserver(this);
+
     // 로그인 상태 확인 - 토큰 유효성도 함께 검사
     _checkLoginStatus().then((isLoggedIn) {
       setState(() {
@@ -73,12 +84,57 @@ class _FriendScreenState extends State<FriendScreen> {
         _fetchFriendsFromServer();
         _fetchFriendRequestsCount();
         _fetchLocationSharingStatus();
+        _fetchFollowRequests(); // 따라가기 요청 조회 추가
 
         // 실시간 위치 업데이트 서비스 확인 및 필요시 시작
         _checkAndStartLocationService();
       }
       // 로그인되지 않은 경우는 별도 처리 없음 - 화면에 로그인 메시지 표시
     });
+  }
+
+  @override
+  void dispose() {
+    // 앱 생명주기 관찰자 제거
+    WidgetsBinding.instance.removeObserver(this);
+
+    _searchController.dispose();
+    _searchFocus.dispose();
+    // 소켓 서비스 정리
+    if (_isLoggedIn) {
+      SocketService().dispose();
+    }
+    super.dispose();
+  }
+
+  // 앱 생명주기 관리
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // 앱이 포그라운드로 돌아왔을 때
+        if (_isLoggedIn) {
+          _fetchFriendsFromServer();
+          _fetchLocationSharingStatus();
+          _fetchFollowRequests();
+        }
+        break;
+      case AppLifecycleState.paused:
+        // 앱이 백그라운드로 갔을 때
+        break;
+      case AppLifecycleState.inactive:
+        // 앱이 비활성 상태일 때
+        break;
+      case AppLifecycleState.detached:
+        // 앱이 종료될 때
+        _stopLocationService();
+        break;
+      case AppLifecycleState.hidden:
+        // 앱이 숨겨질 때
+        break;
+    }
   }
 
   // 로그인 상태 확인 (토큰 유효성 검사 포함)
@@ -132,20 +188,24 @@ class _FriendScreenState extends State<FriendScreen> {
       await prefs.remove('token');
       await prefs.remove('user_id');
       await prefs.remove('is_logged_in');
+
+      // 실시간 위치 서비스 중단
+      await _realTimeLocationService.stopLocationUpdates();
+
+      print('로그아웃 처리 완료');
     } catch (e) {
       print('로그아웃 처리 오류: $e');
     }
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _searchFocus.dispose();
-    // 소켓 서비스 정리
-    if (_isLoggedIn) {
-      SocketService().dispose();
+  // 위치 서비스 중단 (로그아웃 시 사용)
+  Future<void> _stopLocationService() async {
+    try {
+      await _realTimeLocationService.stopLocationUpdates();
+      print('위치 서비스 중단 완료');
+    } catch (e) {
+      print('위치 서비스 중단 오류: $e');
     }
-    super.dispose();
   }
 
   // 바텀 네비게이션 바 탭 변경 처리
@@ -267,6 +327,37 @@ class _FriendScreenState extends State<FriendScreen> {
 
     // 다른 플랫폼이거나 이미 localhost가 아닌 경우 원래 URL 반환
     return baseUrl;
+  }
+
+  // API 오류 처리 메서드
+  void _handleApiError(http.Response response, String operation) {
+    String errorMessage;
+
+    switch (response.statusCode) {
+      case 400:
+        errorMessage = '잘못된 요청입니다.';
+        break;
+      case 401:
+        errorMessage = '인증에 실패했습니다. 다시 로그인해주세요.';
+        break;
+      case 403:
+        errorMessage = '접근 권한이 없습니다.';
+        break;
+      case 404:
+        errorMessage = '요청한 정보를 찾을 수 없습니다.';
+        break;
+      case 500:
+        errorMessage = '서버 오류가 발생했습니다.';
+        break;
+      default:
+        errorMessage = '$operation에 실패했습니다.';
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(errorMessage)));
+    }
   }
 
   // 소켓 초기화 함수
@@ -450,6 +541,9 @@ class _FriendScreenState extends State<FriendScreen> {
               friend['isSharing'] = false;
             }
           }
+
+          // 친구 목록 정렬
+          _sortFriends();
         });
       } else if (response.statusCode == 401) {
         // 인증 오류 - 토큰이 만료되었거나 유효하지 않음
@@ -469,9 +563,15 @@ class _FriendScreenState extends State<FriendScreen> {
         }
       } else {
         print('친구 목록 불러오기 실패: ${response.statusCode} - ${response.body}');
+        _handleApiError(response, '친구 목록 로드');
       }
     } catch (e) {
       print('친구 목록 불러오기 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('친구 목록을 불러오는데 실패했습니다.')));
+      }
     }
   }
 
@@ -596,6 +696,41 @@ class _FriendScreenState extends State<FriendScreen> {
     }
   }
 
+  // 따라가기 요청 조회
+  Future<void> _fetchFollowRequests() async {
+    if (!_isLoggedIn) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      final myUserId = prefs.getString('user_id');
+
+      if (token == null) return;
+
+      final apiBaseUrl = _getApiBaseUrl();
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/follow/requests'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> requests = json.decode(response.body);
+        setState(() {
+          _followRequestFriends.clear();
+          for (var request in requests) {
+            if (request['status'] == 'pending' &&
+                request['target_id'].toString() == myUserId) {
+              _followRequestFriends.add(request['requester_id'].toString());
+            }
+          }
+        });
+        print('따라가기 요청자 목록: $_followRequestFriends');
+      }
+    } catch (e) {
+      print('따라가기 요청 조회 오류: $e');
+    }
+  }
+
   // 친구 검색 함수
   void _searchFriends(String query) {
     if (!_isLoggedIn) {
@@ -692,6 +827,66 @@ class _FriendScreenState extends State<FriendScreen> {
     }
 
     return friend;
+  }
+
+  // 친구 목록 정렬
+  void _sortFriends() {
+    friends.sort((a, b) {
+      // 온라인 상태 우선 정렬
+      final aOnline = _getBoolValue(a['isOnline']);
+      final bOnline = _getBoolValue(b['isOnline']);
+
+      if (aOnline && !bOnline) return -1;
+      if (!aOnline && bOnline) return 1;
+
+      // 그 다음 닉네임/이름으로 정렬
+      final aName =
+          a['nickname']?.isNotEmpty == true ? a['nickname'] : a['name'] ?? '';
+      final bName =
+          b['nickname']?.isNotEmpty == true ? b['nickname'] : b['name'] ?? '';
+
+      return aName.compareTo(bName);
+    });
+  }
+
+  // 마지막 활동 시간 포맷팅
+  String _formatLastActiveTime(String? lastActive) {
+    if (lastActive == null) return '';
+
+    try {
+      final DateTime lastActiveTime = DateTime.parse(lastActive);
+      final DateTime now = DateTime.now();
+      final Duration difference = now.difference(lastActiveTime);
+
+      if (difference.inMinutes < 5) {
+        return '방금 전';
+      } else if (difference.inHours < 1) {
+        return '${difference.inMinutes}분 전';
+      } else if (difference.inDays < 1) {
+        return '${difference.inHours}시간 전';
+      } else {
+        return '${difference.inDays}일 전';
+      }
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // 친구 프로필 모달 표시 (friends_show.dart 사용)
+  void showFriendProfile(BuildContext context, Map<String, dynamic> friend) {
+    // 친구에게 따라가기 요청이 있는지 확인하여 전달
+    final hasFollowRequest = _followRequestFriends.contains(
+      friend['id'].toString(),
+    );
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => FriendsShowModal(
+            friend: friend,
+            hasFollowRequest: hasFollowRequest, // 따라가기 요청 여부 전달
+          ),
+    );
   }
 
   // 위치 공유 상태 변경 콜백
@@ -857,7 +1052,6 @@ class _FriendScreenState extends State<FriendScreen> {
                     borderRadius: BorderRadius.circular(24),
                   ),
                   child: Center(
-                    // 여기에 Center 위젯 추가
                     child: TextField(
                       controller: _searchController,
                       focusNode: _searchFocus,
@@ -1020,18 +1214,47 @@ class _FriendScreenState extends State<FriendScreen> {
                                 title: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // 닉네임 (메인 표시)
-                                    Text(
-                                      validFriend['nickname']?.isNotEmpty ==
-                                              true
-                                          ? validFriend['nickname']
-                                          : validFriend['name'] ?? '닉네임 없음',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w500,
-                                        fontSize: 15,
-                                      ),
+                                    // 닉네임과 따라가기 요청 알람을 Row로 감싸기
+                                    Row(
+                                      children: [
+                                        // 닉네임 (메인 표시)
+                                        Text(
+                                          validFriend['nickname']?.isNotEmpty ==
+                                                  true
+                                              ? validFriend['nickname']
+                                              : validFriend['name'] ?? '닉네임 없음',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w500,
+                                            fontSize: 15,
+                                          ),
+                                        ),
+                                        // 따라가기 요청 알람 표시 (느낌표)
+                                        if (_followRequestFriends.contains(
+                                          validFriend['id'].toString(),
+                                        ))
+                                          Container(
+                                            margin: EdgeInsets.only(left: 6),
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.red,
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            child: Text(
+                                              '!',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
                                     ),
-                                    // 마스킹된 아이디 (항상 표시)
+                                    // 마스킹된 아이디 (항상 표시) - 기존 코드 유지
                                     Padding(
                                       padding: const EdgeInsets.only(top: 2.0),
                                       child: Text(
@@ -1043,6 +1266,18 @@ class _FriendScreenState extends State<FriendScreen> {
                                         ),
                                       ),
                                     ),
+                                    // 마지막 활동 시간 (오프라인인 경우만 표시) - 기존 코드 유지
+                                    if (validFriend['isOnline'] != true &&
+                                        validFriend['lastActive'] != null)
+                                      Text(
+                                        _formatLastActiveTime(
+                                          validFriend['lastActive'],
+                                        ),
+                                        style: TextStyle(
+                                          color: Colors.grey[500],
+                                          fontSize: 12,
+                                        ),
+                                      ),
                                   ],
                                 ),
                                 trailing: IconButton(
@@ -1126,4 +1361,20 @@ class _FriendScreenState extends State<FriendScreen> {
       ),
     );
   }
+}
+
+// 친구 설정 모달 표시 함수 (전역 함수)
+void showFriendSettings(
+  BuildContext context,
+  Map<String, dynamic> friend,
+  Function onShareStatusChanged,
+) {
+  showDialog(
+    context: context,
+    builder:
+        (context) => FriendsSettingModal(
+          friend: friend,
+          onShareStatusChanged: onShareStatusChanged,
+        ),
+  );
 }

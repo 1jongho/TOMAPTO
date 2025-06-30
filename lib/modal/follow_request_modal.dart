@@ -44,7 +44,7 @@ class _FollowRequestModalState extends State<FollowRequestModal> {
     return baseUrl;
   }
 
-  // 따라가기 요청 응답
+  // 찾아가기 요청 응답
   Future<void> _respondToRequest(String response) async {
     if (_isLoading) return;
 
@@ -71,6 +71,7 @@ class _FollowRequestModalState extends State<FollowRequestModal> {
         body: json.encode({
           'request_id': widget.requestId,
           'response': response, // 'accept' or 'reject'
+          'type': 'find_way', // 찾아가기 타입 추가
         }),
       );
 
@@ -78,7 +79,7 @@ class _FollowRequestModalState extends State<FollowRequestModal> {
 
       if (httpResponse.statusCode == 200) {
         final message =
-            response == 'accept' ? '따라가기 요청을 수락했습니다' : '따라가기 요청을 거절했습니다';
+            response == 'accept' ? '찾아가기 요청을 수락했습니다' : '찾아가기 요청을 거절했습니다';
         _showSnackBar(message);
 
         if (widget.onResponseSent != null) {
@@ -89,7 +90,7 @@ class _FollowRequestModalState extends State<FollowRequestModal> {
         _showSnackBar(data['error'] ?? '응답 실패');
       }
     } catch (e) {
-      print('따라가기 응답 오류: $e');
+      print('찾아가기 응답 오류: $e');
       _showSnackBar('네트워크 오류가 발생했습니다');
     } finally {
       setState(() {
@@ -108,26 +109,105 @@ class _FollowRequestModalState extends State<FollowRequestModal> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('따라가기 요청'),
-      content: Text('${widget.requesterName}님이 따라가기를 요청했습니다.\n수락하시겠습니까?'),
-      actions: [
-        TextButton(
-          onPressed: _isLoading ? null : () => _respondToRequest('reject'),
-          child: Text('거절하기', style: TextStyle(color: Colors.grey[600])),
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 제목
+            Text(
+              '찾아가기 요청',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 16),
+
+            // 요청 메시지
+            RichText(
+              textAlign: TextAlign.center,
+              text: TextSpan(
+                style: TextStyle(fontSize: 16, color: Colors.black87),
+                children: [
+                  TextSpan(
+                    text: widget.requesterName,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                  TextSpan(text: '님이 찾아가기를 요청했습니다.'),
+                ],
+              ),
+            ),
+            SizedBox(height: 12),
+
+            // 허용 시간 안내
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Text(
+                '허용 시간: 1시간',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.orange[700],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            SizedBox(height: 24),
+
+            // 버튼들
+            if (_isLoading)
+              Center(child: CircularProgressIndicator())
+            else
+              Row(
+                children: [
+                  // 거절 버튼
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _respondToRequest('reject'),
+                      style: OutlinedButton.styleFrom(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        side: BorderSide(color: Colors.grey),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Text(
+                        '거절',
+                        style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 12),
+
+                  // 허용 버튼
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _respondToRequest('accept'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Text(
+                        '허용',
+                        style: TextStyle(fontSize: 16, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+          ],
         ),
-        TextButton(
-          onPressed: _isLoading ? null : () => _respondToRequest('accept'),
-          child:
-              _isLoading
-                  ? SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                  : Text('수락하기', style: TextStyle(color: Colors.blue)),
-        ),
-      ],
+      ),
     );
   }
 }
