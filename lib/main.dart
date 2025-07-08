@@ -10,7 +10,12 @@ import 'package:tomapto/pages/intro.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:tomapto/services/push_notification_service.dart';
+import 'package:tomapto/pages/friends/real_time_location_sharing.dart';
+import 'package:tomapto/services/socket_service.dart';
 import 'firebase_options.dart';
+
+//  추가: 전역 NavigatorKey
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 // Firebase 백그라운드 메시지 핸들러
 @pragma('vm:entry-point')
@@ -49,13 +54,40 @@ void main() async {
       badge: true,
       sound: true,
     );
-    print('🔥 알림 권한 상태: ${settings.authorizationStatus}');
+    print(' 알림 권한 상태: ${settings.authorizationStatus}');
 
     // FCM 토큰 확인
     final fcmToken = await FirebaseMessaging.instance.getToken();
-    print('🔥 FCM Token: $fcmToken');
+    print(' FCM Token: $fcmToken');
+
     // 푸시알림 서비스 초기화
     final pushService = PushNotificationService();
+
+    //  추가: 실시간 위치 페이지로 이동하는 콜백 설정
+    pushService.onNavigateToFindWay = (friendData) {
+      print(' 푸시알림 클릭 - 실시간 위치 페이지로 이동: $friendData');
+
+      //  추가: 위치 공유 자동 시작
+      final socketService = SocketService();
+      if (!socketService.isConnected) {
+        socketService.initSocket().then((_) {
+          socketService.startLocationSharing(friendData['id'].toString(), null);
+          print(' 소켓 연결 후 위치 공유 시작');
+        });
+      } else {
+        socketService.startLocationSharing(friendData['id'].toString(), null);
+        print(' 위치 공유 시작');
+      }
+
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder:
+              (context) =>
+                  RealTimeLocationSharingPage(selectedFriend: friendData),
+        ),
+      );
+    };
+
     await pushService.initialize();
 
     // 알림 채널 생성 (Android)
@@ -66,10 +98,10 @@ void main() async {
     print('⚠️ 푸시알림 기능 제외하고 앱 계속 실행');
   }
 
-  print('🔥 푸시알림 서비스 초기화 완료');
+  print(' 푸시알림 서비스 초기화 완료');
   // 토큰 새로고침 리스너
   FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-    print('🔥 FCM Token 새로고침: $newToken');
+    print(' FCM Token 새로고침: $newToken');
   });
 
   try {
@@ -100,6 +132,7 @@ class MyApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (context) => TransitProvider(),
       child: MaterialApp(
+        navigatorKey: navigatorKey, //  추가: 전역 NavigatorKey 설정
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           scaffoldBackgroundColor: Colors.white,

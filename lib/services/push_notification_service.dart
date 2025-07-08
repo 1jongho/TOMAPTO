@@ -110,7 +110,7 @@ class PushNotificationService {
         await prefs.setString('fcm_token', token);
         print('FCM 토큰 저장됨: $token');
 
-        // 🔥 추가: 서버에 토큰 전송
+        //  추가: 서버에 토큰 전송
         await _sendTokenToServer(token);
       }
     } catch (e) {
@@ -200,7 +200,13 @@ class PushNotificationService {
   /// 찾아가기 페이지로 네비게이션
   void _navigateToFindWayPage(Map<String, dynamic> data) {
     if (onNavigateToFindWay != null && data['type'] == 'find_way') {
-      onNavigateToFindWay!(data);
+      //  수정: 실시간 위치 페이지로 바로 이동
+      final friendData = {
+        'id': data['friend_id'],
+        'name': data['friend_name'] ?? '친구',
+      };
+
+      onNavigateToFindWay!(friendData);
     }
   }
 
@@ -225,7 +231,7 @@ class PushNotificationService {
       print('FCM 토큰 새로고침됨: $newToken');
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('fcm_token', newToken);
-      // 🔥 수정: 서버에 새 토큰 전송
+      //  수정: 서버에 새 토큰 전송
       await _sendTokenToServer(newToken);
     });
   }

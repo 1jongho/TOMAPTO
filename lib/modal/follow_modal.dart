@@ -181,7 +181,9 @@ class _FollowModalState extends State<FollowModal> {
       final data = json.decode(response.body);
 
       if (response.statusCode == 200) {
-        _showSnackBar('찾아가기를 해제했습니다');
+        //  수정: 요청자/수신자에 따라 다른 메시지
+        final message = widget.isRequester ? '찾아가기 취소' : '찾아가기를 해제했습니다';
+        _showSnackBar(message);
         widget.onStatusChanged(); // 상태 갱신
         Navigator.pop(context);
       } else {
@@ -291,7 +293,7 @@ class _FollowModalState extends State<FollowModal> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 🔥 허용된 상태에서 요청자인 경우: 길찾기 시작 + 찾아가기 취소 (붙어있는 디자인)
+            //  허용된 상태에서 요청자인 경우: 길찾기 시작 + 찾아가기 취소 (붙어있는 디자인)
             if (widget.currentStatus == 'accepted' && widget.isRequester) ...[
               // 길찾기 시작 버튼 (첫 번째)
               InkWell(
@@ -299,7 +301,7 @@ class _FollowModalState extends State<FollowModal> {
                     _isLoading
                         ? null
                         : () {
-                          print('🔥 길찾기 시작 버튼 클릭');
+                          print(' 길찾기 시작 버튼 클릭');
                           Navigator.pop(context);
                           widget.onStatusChanged(); // Transit 페이지로 이동
                         },
@@ -358,9 +360,8 @@ class _FollowModalState extends State<FollowModal> {
                     _isLoading
                         ? null
                         : () {
-                          print('🔥 찾아가기 취소 버튼 클릭');
-                          _cancelFindWayRequest(); // 취소 로직만 호출
-                          Navigator.pop(context); // 🔥 추가: 모달 닫기
+                          print(' 찾아가기 취소 버튼 클릭');
+                          _stopFindWay(); //  수정: _cancelFindWayRequest -> _stopFindWay
                         },
                 child: Container(
                   width: double.infinity,

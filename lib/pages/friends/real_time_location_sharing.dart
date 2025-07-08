@@ -19,9 +19,13 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 
 class RealTimeLocationSharingPage extends StatefulWidget {
   final Map<String, dynamic> selectedFriend;
+  final bool autoStartSharing;
 
-  const RealTimeLocationSharingPage({Key? key, required this.selectedFriend})
-    : super(key: key);
+  const RealTimeLocationSharingPage({
+    Key? key,
+    required this.selectedFriend,
+    this.autoStartSharing = false,
+  }) : super(key: key);
 
   @override
   _RealTimeLocationSharingPageState createState() =>
@@ -81,6 +85,7 @@ class _RealTimeLocationSharingPageState
   bool _userManuallyControlledCamera = false;
   DateTime? _lastManualCameraControl;
   double _currentZoom = 15.0;
+  String? _myUserId;
 
   @override
   void initState() {
@@ -88,10 +93,12 @@ class _RealTimeLocationSharingPageState
 
     _socketService = SocketService();
     _initSocket();
+    _checkLocationSharingStatus();
     _loadLocations();
     _loadFollowStatus();
     _loadFindWayStartTime();
     _saveFCMToken(); // FCM 토큰 저장 추가
+    _loadMyUserId();
 
     // 1초마다 위치 정보 갱신
     _locationUpdateTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -108,7 +115,7 @@ class _RealTimeLocationSharingPageState
     _locationUpdateTimer?.cancel();
     _locationUpdateSubscription?.cancel();
 
-    // 🔥 찾아가기 관련 리스너들 정리
+    //  찾아가기 관련 리스너들 정리
     _followRequestSubscription?.cancel();
     _followResponseSubscription?.cancel();
     _followCancelledSubscription?.cancel();
@@ -173,7 +180,7 @@ class _RealTimeLocationSharingPageState
           _isRequester = isRequester; // 직접 계산한 값 사용
           _currentRequestId = data['request_id'];
 
-          // 🔥 추가: accepted 상태일 때 친구 고정 위치 설정
+          //  추가: accepted 상태일 때 친구 고정 위치 설정
           if (_followStatus == 'accepted' && _friendPosition != null) {
             _friendFixedPosition = _friendPosition;
             print('🔍 친구 고정 위치 설정: $_friendFixedPosition');
@@ -203,7 +210,7 @@ class _RealTimeLocationSharingPageState
         await _socketService.initSocket();
       }
 
-      // 🔥 기존 리스너들 정리
+      //  기존 리스너들 정리
       _followRequestSubscription?.cancel();
       _followResponseSubscription?.cancel();
       _followCancelledSubscription?.cancel();
@@ -264,93 +271,78 @@ class _RealTimeLocationSharingPageState
       // 찾아가기 요청 리스너
       _followRequestSubscription = _socketService.onFollowRequestReceived
           .listen((data) {
-            SharedPreferences.getInstance().then((prefs) {
-              final myUserId = prefs.getString('user_id');
+            print("🔔 찾아가기 요청 수신: $data");
 
-              print("🔔 찾아가기 요청 수신: $data");
-
-              // 내가 요청받은 사람인 경우만 모달 표시
-              if (data['target_id'].toString() == myUserId) {
-                print("✅ 모달 표시: 내가 요청받은 사람");
-                _showFollowRequestModal(
-                  data['request_id'] ?? 0,
-                  data['requester_name'] ?? '',
-                );
-              } else {
-                print("❌ 모달 표시 안함: target=${data['target_id']}, my=$myUserId");
-              }
-            });
+            //  수정: 캐싱된 userId 사용으로 즉시 처리
+            if (data['target_id'].toString() == _myUserId) {
+              print("✅ 모달 표시: 내가 요청받은 사람");
+              _showFollowRequestModal(
+                data['request_id'] ?? 0,
+                data['requester_name'] ?? '',
+              );
+            } else {
+              print("❌ 모달 표시 안함: target=${data['target_id']}, my=$_myUserId");
+            }
           });
 
       _followResponseSubscription = _socketService.onFollowRequestResponded
           .listen((data) {
-            SharedPreferences.getInstance().then((prefs) {
-              final myUserId = prefs.getString('user_id');
+            //  수정: 캐싱된 userId 사용
+            if (data['requester_id'].toString() == _myUserId) {
+              final response = data['response'];
+              final message =
+                  response == 'accept'
+                      ? '${data['target_name']}님이 찾아가기 요청을 수락했습니다'
+                      : '${data['target_name']}님이 찾아가기 요청을 거절했습니다';
 
-              if (data['requester_id'].toString() == myUserId) {
-                final response = data['response'];
-                final message =
-                    response == 'accept'
-                        ? '${data['target_name']}님이 찾아가기 요청을 수락했습니다'
-                        : '${data['target_name']}님이 찾아가기 요청을 거절했습니다';
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text(message)));
 
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text(message)));
-
-                if (response == 'accept') {
-                  setState(() {
-                    _followStatus = 'accepted';
-                  });
-                  _startNavigation();
-                } else {
-                  setState(() {
-                    _followStatus = 'none';
-                    _isRequester = false;
-                    _currentRequestId = null;
-                  });
-                }
+              if (response == 'accept') {
+                setState(() {
+                  _followStatus = 'accepted';
+                });
+                _startNavigation();
+              } else {
+                setState(() {
+                  _followStatus = 'none';
+                  _isRequester = false;
+                  _currentRequestId = null;
+                });
               }
-            });
+            }
           });
 
       _followCancelledSubscription = _socketService.onFollowRequestCancelled
           .listen((data) {
-            SharedPreferences.getInstance().then((prefs) {
-              final myUserId = prefs.getString('user_id');
-
-              if (data['target_id'].toString() == myUserId) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      '${data['requester_name']}님이 찾아가기 요청을 취소했습니다',
-                    ),
-                  ),
-                );
-              }
-            });
+            //  수정: 캐싱된 userId 사용
+            if (data['target_id'].toString() == _myUserId) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${data['requester_name']}님이 찾아가기 요청을 취소했습니다'),
+                ),
+              );
+            }
           });
 
       _followStoppedSubscription = _socketService.onFollowStopped.listen((
         data,
       ) {
-        SharedPreferences.getInstance().then((prefs) {
-          final myUserId = prefs.getString('user_id');
-
-          if (data['other_user_id'].toString() == myUserId) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('${data['stopped_by_name']}님이 찾아가기를 중단했습니다'),
-              ),
-            );
-            setState(() {
-              _followStatus = 'none';
-              _isRequester = false;
-              _currentRequestId = null;
-            });
-            _stopNavigation();
-          }
-        });
+        //  수정: 캐싱된 userId 사용
+        if (data['other_user_id'].toString() == _myUserId) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${data['stopped_by_name']}님이 찾아가기를 중단했습니다'),
+            ),
+          );
+          setState(() {
+            _followStatus = 'none';
+            _isRequester = false;
+            _currentRequestId = null;
+          });
+          _stopNavigation();
+        }
       });
 
       print('소켓 이벤트 리스너 설정 완료');
@@ -393,7 +385,7 @@ class _RealTimeLocationSharingPageState
 
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder:
           (context) => FollowRequestModal(
             requestId: data['request_id'] ?? 0,
@@ -416,20 +408,17 @@ class _RealTimeLocationSharingPageState
     if (response == 'accept') {
       setState(() {
         _followStatus = 'accepted';
-        _findWayStartTime = DateTime.now(); // 허용 시점 시간 저장
-        _friendFixedPosition = _friendPosition; // 현재 친구 위치를 고정으로 저장
+        _findWayStartTime = DateTime.now();
+        _friendFixedPosition = _friendPosition;
       });
 
-      // SharedPreferences에 시간 저장
       _saveFindWayStartTime();
-
-      // 1시간 만료 타이머 시작
       _startFindWayExpiryTimer();
 
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('찾아가기 요청이 수락되었습니다')));
-      // 추가: 수락 후 잠시 딜레이를 두고 Transit 페이지 안내
+
       Future.delayed(Duration(seconds: 2), () {
         if (mounted && _followStatus == 'accepted' && _isRequester) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -442,10 +431,21 @@ class _RealTimeLocationSharingPageState
         }
       });
     } else {
+      //  수정: 거절 시 완전한 상태 초기화
       setState(() {
         _followStatus = 'none';
+        _isRequester = false;
         _currentRequestId = null;
+        _findWayStartTime = null;
+        _friendFixedPosition = null;
+        _isNavigating = false;
       });
+
+      //  추가: 타이머 및 경로 정리
+      _findWayExpiryTimer?.cancel();
+      _clearNavigationRoute();
+      _clearFindWayStartTime();
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('찾아가기 요청이 거절되었습니다')));
@@ -456,12 +456,19 @@ class _RealTimeLocationSharingPageState
   void _handleFollowCancelled(Map<String, dynamic> data) {
     if (!mounted) return;
 
+    //  추가: 현재 표시중인 모달이 있다면 닫기
+    if (_isModalCurrentlyShowing) {
+      Navigator.of(context, rootNavigator: true).pop();
+      _isModalCurrentlyShowing = false;
+    }
+
     setState(() {
       _followStatus = 'none';
       _currentRequestId = null;
       _findWayStartTime = null;
       _friendFixedPosition = null;
       _isNavigating = false;
+      _isRequester = false; //  추가: 요청자 상태 초기화
     });
 
     // 타이머 및 경로 정리
@@ -477,6 +484,12 @@ class _RealTimeLocationSharingPageState
   // 찾아가기 중단 처리
   void _handleFollowStopped(Map<String, dynamic> data) {
     if (!mounted) return;
+
+    //  추가: 현재 표시중인 모달이 있다면 닫기
+    if (_isModalCurrentlyShowing) {
+      Navigator.of(context, rootNavigator: true).pop();
+      _isModalCurrentlyShowing = false;
+    }
 
     setState(() {
       _followStatus = 'none';
@@ -596,19 +609,19 @@ class _RealTimeLocationSharingPageState
   }
 
   void _showFollowRequestModal(int requestId, String requesterName) {
-    if (!mounted || _isModalCurrentlyShowing) return; // 🔥 안전 체크
+    if (!mounted || _isModalCurrentlyShowing) return; //  안전 체크
 
     _isModalCurrentlyShowing = true;
 
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder:
           (context) => FollowRequestModal(
             requestId: requestId,
             requesterName: requesterName,
             onResponseSent: () {
-              print('🔥 모달 응답 완료, 상태 새로고침');
+              print(' 모달 응답 완료, 상태 새로고침');
               if (mounted) {
                 _isModalCurrentlyShowing = false;
                 _loadFollowStatus(); // 상태 다시 로드
@@ -616,10 +629,10 @@ class _RealTimeLocationSharingPageState
             },
           ),
     ).then((_) {
-      print('🔥 모달 완전히 닫힘');
+      print(' 모달 완전히 닫힘');
       if (mounted) {
         _isModalCurrentlyShowing = false;
-        // 🔥 모달 닫힐 때는 상태 새로고침 하지 않음 (중복 방지)
+        //  모달 닫힐 때는 상태 새로고침 하지 않음 (중복 방지)
       }
     });
   }
@@ -628,45 +641,45 @@ class _RealTimeLocationSharingPageState
   void _showFindWayModal() {
     if (_isModalCurrentlyShowing) return;
 
-    _isModalCurrentlyShowing = true;
+    // 🔥 추가: 최신 상태 다시 확인
+    _loadFollowStatus().then((_) {
+      if (!mounted || _isModalCurrentlyShowing) return;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder:
-          (context) => FollowModal(
-            friend: widget.selectedFriend, // 🔥 수정: friendName -> friend
-            currentStatus: _followStatus,
-            isRequester: _isRequester,
-            onStatusChanged: () {
-              _loadFollowStatus();
-              _isModalCurrentlyShowing = false;
+      _isModalCurrentlyShowing = true;
 
-              // 🔥 추가: 허용된 상태에서 요청자가 길찾기 시작을 눌렀을 때 Transit 페이지로 이동
-              Future.delayed(Duration(milliseconds: 500), () {
-                if (_followStatus == 'accepted' &&
-                    _isRequester &&
-                    _friendFixedPosition != null &&
-                    _myPosition != null) {
-                  print('🔥 조건 만족 - Transit 페이지로 이동');
-                  _navigateToTransitPage();
-                } else {
-                  print(
-                    '🔥 조건 불만족 - Transit 이동 안함: status=$_followStatus, isRequester=$_isRequester',
-                  );
-                }
-              });
-            },
-          ),
-    ).then((_) {
-      _isModalCurrentlyShowing = false;
+      showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder:
+            (context) => FollowModal(
+              friend: widget.selectedFriend,
+              currentStatus: _followStatus,
+              isRequester: _isRequester,
+              onStatusChanged: () {
+                _loadFollowStatus();
+                _isModalCurrentlyShowing = false;
+
+                Future.delayed(Duration(milliseconds: 500), () {
+                  if (_followStatus == 'accepted' &&
+                      _isRequester &&
+                      _friendFixedPosition != null &&
+                      _myPosition != null) {
+                    print(' 조건 만족 - Transit 페이지로 이동');
+                    _navigateToTransitPage();
+                  }
+                });
+              },
+            ),
+      ).then((_) {
+        _isModalCurrentlyShowing = false;
+      });
     });
   }
 
   // FCM 토큰 서버에 저장
   Future<void> _saveFCMToken() async {
     try {
-      print('🔥 real_time_location_sharing에서 FCM 토큰 저장 시작');
+      print(' real_time_location_sharing에서 FCM 토큰 저장 시작');
 
       final token = await FirebaseMessaging.instance.getToken();
       if (token != null) {
@@ -684,18 +697,43 @@ class _RealTimeLocationSharingPageState
             body: json.encode({'fcm_token': token}),
           );
 
-          print('🔥 FCM 토큰 서버 응답: ${response.statusCode}');
-          print('🔥 FCM 토큰 서버 응답 내용: ${response.body}');
+          print(' FCM 토큰 서버 응답: ${response.statusCode}');
+          print(' FCM 토큰 서버 응답 내용: ${response.body}');
 
           if (response.statusCode == 200) {
-            print('🔥 FCM 토큰 서버에 저장 완료');
+            print(' FCM 토큰 서버에 저장 완료');
           }
         } else {
-          print('🔥 Auth Token 없음');
+          print(' Auth Token 없음');
         }
       }
     } catch (e) {
-      print('🔥 FCM 토큰 저장 오류: $e');
+      print(' FCM 토큰 저장 오류: $e');
+    }
+  }
+
+  Future<void> _loadMyUserId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _myUserId = prefs.getString('user_id');
+      print(' 사용자 ID 로드 완료: $_myUserId');
+    } catch (e) {
+      print(' 사용자 ID 로드 실패: $e');
+    }
+  }
+
+  Future<void> _checkLocationSharingStatus() async {
+    try {
+      final friendId = widget.selectedFriend['id'];
+      final iAmSharing = await LocationService.checkIAmSharingWith(friendId);
+
+      print(' 초기 위치 공유 상태: $iAmSharing');
+
+      setState(() {
+        _iAmSharingLocation = iAmSharing;
+      });
+    } catch (e) {
+      print(' 위치 공유 상태 확인 실패: $e');
     }
   }
 
@@ -935,6 +973,10 @@ class _RealTimeLocationSharingPageState
       friendId,
     );
 
+    print(
+      ' 위치 공유 상태 확인: 내가 공유 중: $iAmSharing, 친구가 공유 중: $friendIsSharing',
+    ); //  추가: 디버그 로그
+
     setState(() {
       _iAmSharingLocation = iAmSharing;
       _friendIsSharingLocation = friendIsSharing;
@@ -1035,7 +1077,7 @@ class _RealTimeLocationSharingPageState
       print("친구 고정 위치: $_friendFixedPosition");
       print("내 위치: $_myPosition");
 
-      // 🔥 수정된 조건: 모든 경우에 모달을 먼저 표시
+      //  수정된 조건: 모든 경우에 모달을 먼저 표시
       print("찾아가기 모달 표시");
       _showFindWayModal();
     });
